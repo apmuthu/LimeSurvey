@@ -193,8 +193,8 @@ CREATE TABLE `prefix_participant_shares` (
 --
 CREATE TABLE `prefix_participants` (
   `participant_id` varchar(50) NOT NULL,
-  `firstname` varchar(40) DEFAULT NULL,
-  `lastname` varchar(40) DEFAULT NULL,
+  `firstname` varchar(150) DEFAULT NULL,
+  `lastname` varchar(150) DEFAULT NULL,
   `email` varchar(254) DEFAULT NULL,
   `language` varchar(40) DEFAULT NULL,
   `blacklisted` varchar(1) NOT NULL,
@@ -284,7 +284,7 @@ CREATE TABLE `prefix_questions` (
   `scale_id` int(11) NOT NULL default '0',
   `same_default` int(11) NOT NULL default '0' COMMENT 'Saves if user set to use the same default value across languages in default options dialog',
   `relevance` text,
-  PRIMARY KEY (`language`, `qid`)
+  PRIMARY KEY (`qid`,`language`)
 ) ENGINE=MYISAM CHARACTER SET utf8 COLLATE utf8_unicode_ci;
 
 
@@ -575,4 +575,4 @@ CREATE INDEX `parent_qid_idx` ON `prefix_questions` (`parent_qid`);
 --
 -- Version Info
 --
-INSERT INTO `prefix_settings_global` VALUES ('DBVersion', '177');
+INSERT INTO `prefix_settings_global` VALUES ('DBVersion', '184');

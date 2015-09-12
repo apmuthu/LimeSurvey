@@ -16,7 +16,7 @@ class SurveyDao
     public function loadSurveyById($id, $lang = null)
     {
         $survey = new SurveyObj();
-        $clang = Yii::app()->lang;
+
 
         $intId = sanitize_int($id);
         $survey->id = $intId;
@@ -27,8 +27,7 @@ class SurveyDao
             // use base language when requested language is not found or no specific language is requested
             $lang = Survey::model()->findByPk($intId)->language;
         }
-
-        $clang = new limesurvey_lang($lang);
+        App()->setLanguage($lang);
         $survey->fieldMap = createFieldMap($intId,'full',true,false,$lang);
         // Check to see if timings are present and add to fieldmap if needed
         if ($survey->info['savetimings']=="Y") {
@@ -73,7 +72,7 @@ class SurveyDao
         $recordSet = Yii::app()->db->createCommand($sQuery)->query();
         $survey->languageSettings = $recordSet->read();
         $recordSet->close();
-        
+
         if (tableExists('tokens_'.$survey->id) && array_key_exists ('token',SurveyDynamic::model($survey->id)->attributes) && Permission::model()->hasSurveyPermission($survey->id,'tokens','read'))
         {
             // Now add the tokenFields
@@ -93,7 +92,7 @@ class SurveyDao
     * @param Survey $survey
     * @param int $iMinimum
     * @param int $iMaximum
-    * @param string $sFilter An optional filter for the results
+    * @param string|array $sFilter An optional filter for the results, i  string or arry of string
     * @param string $completionState all, complete or incomplete
     */
     public function loadSurveyResults(SurveyObj $survey, $iMinimum, $iMaximum, $sFilter='', $completionState = 'all' )
@@ -132,8 +131,12 @@ class SurveyDao
         $selection = '{{survey_' . $survey->id . '}}.id >= :min AND {{survey_' . $survey->id . '}}.id <= :max';
         $oRecordSet->where($selection, $aParams);
 
-        if ($sFilter!='') {
+        if(is_string($sFilter) && $sFilter)
             $oRecordSet->andWhere($sFilter);
+        elseif(is_array($sFilter) && count($sFilter))
+        {
+            foreach($sFilter as $filter)
+                $oRecordSet->andWhere($filter);
         }
 
         switch ($completionState)
@@ -149,7 +152,7 @@ class SurveyDao
                 // Do nothing, all responses
                 break;
         }
- 
+
         $survey->responses=$oRecordSet->select($aSelectFields)->query();
     }
 }

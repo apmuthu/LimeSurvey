@@ -5,20 +5,12 @@
      * index.php
      */
     require_once(dirname(dirname(__FILE__)) . '/helpers/globals.php');
-    
+
     class ConsoleApplication extends CConsoleApplication
     {
-        
-        protected $config = array();
-        
-        public $lang = null;
 
-        /**
-         *
-         * @var PluginManager
-         */
-        protected $pluginManager;
-        
+        protected $config = array();
+
         /**
          * @var LimesurveyApi
          */
@@ -34,8 +26,6 @@
             $this->config = array_merge($this->config, $email);
 
             // Now initialize the plugin manager
-            $this->initPluginManager();
-
         }
 
         /**
@@ -57,10 +47,10 @@
         public function getController()
         {
             return $this;
-            
+
         }
-        
-        
+
+
         /**
         * Returns a config variable from the config
         *
@@ -85,31 +75,12 @@
         }
 
         /**
-         * Get the pluginManager
-         *
-         * @return PluginManager
-         */
-        public function getPluginManager()
-        {
-            return $this->pluginManager;
-        }
-
-        /**
          * This method handles initialization of the plugin manager
-         * 
+         *
          * When you want to insert your own plugin manager, or experiment with different settings
          * then this is where you should do that.
          */
-        public function initPluginManager()
-        {
-            Yii::import('application.libraries.PluginManager.*');
-            Yii::import('application.libraries.PluginManager.Storage.*');
-            Yii::import('application.libraries.PluginManager.Question.*');
-            $this->pluginManager = new PluginManager($this->getApi());
 
-            // And load the active plugins
-            $this->pluginManager->loadPlugins();
-        }
 
         /**
          * Loads a helper
@@ -122,7 +93,7 @@
         {
             Yii::import('application.helpers.' . $helper . '_helper', true);
         }
-        
+
         /**
          * Sets a configuration variable into the config
          *

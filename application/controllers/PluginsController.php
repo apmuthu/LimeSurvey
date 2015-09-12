@@ -80,7 +80,7 @@ class PluginsController extends LSYii_Controller
         }
         
         // If post handle data, yt0 seems to be the submit button
-        if (App()->request->isPostRequest && App()->request->getPost('yt0'))
+        if (App()->request->isPostRequest)
         {
 
             $aSettings = $oPluginObject->getPluginSettings(false);
@@ -90,20 +90,26 @@ class PluginsController extends LSYii_Controller
                 $aSave[$name] = App()->request->getPost($name, null);
             }
             $oPluginObject->saveSettings($aSave);
-
             Yii::app()->user->setFlash('pluginmanager', 'Settings saved');
-            $this->forward('plugins/index', true);
+            if(App()->request->getPost('redirect'))
+            {
+                $this->redirect(App()->request->getPost('redirect'), true);
+            }
         }
 
+        // Prepare settings to be send to the view.
         $aSettings = $oPluginObject->getPluginSettings();
-
         if (empty($aSettings))
         {
             // And show a message
             Yii::app()->user->setFlash('pluginmanager', 'This plugin has no settings');
-            $this->forward('plugins/index', true);
+            $this->redirect('plugins/index', true);
         }
-        $this->render('/plugins/configure', array('settings' => $aSettings, 'plugin'   => $arPlugin));
+
+        // Send to view plugin porperties: name and description
+        $aPluginProp = App()->getPluginManager()->getPluginInfo($arPlugin['name']);
+
+        $this->render('/plugins/configure', array('settings' => $aSettings, 'plugin' => $arPlugin, 'properties' => $aPluginProp));
     }
 
     public function actionDeactivate($id)

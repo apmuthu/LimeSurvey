@@ -18,7 +18,7 @@
  * Need to be replaced by some polyfills see #8009
  */
 hasFormValidation= typeof document.createElement( 'input' ).checkValidity == 'function';
-
+linksInDialog();
 $(document).ready(function(){
     initializeAjaxProgress();
     tableCellAdapters();
@@ -32,14 +32,14 @@ $(document).ready(function(){
                 changeYear: true,
                 changeMonth: true,
                 duration: 'fast'
-            }, $.datepicker.regional[userlanguage]);
+            }, $.datepicker.regional[LS.data.language]);
         });
         $(".popupdatetime").datepicker({ dateFormat: userdateformat+' 00:00',
             showOn: 'button',
             changeYear: true,
             changeMonth: true,
             duration: 'fast'
-        }, $.datepicker.regional[userlanguage]);
+        }, $.datepicker.regional[LS.data.language]);
     }
     $(".sf-menu").superfish({speed: 'fast'});
     doToolTip();
@@ -70,7 +70,7 @@ $(document).ready(function(){
             "height": "toggle", "opacity": "toggle"
         });
 
-    })
+    });
     $('#hideadvancedattributes').click(function(){
         $('#showadvancedattributes').show();
         $('#hideadvancedattributes').hide();
@@ -78,7 +78,7 @@ $(document).ready(function(){
             "height": "toggle", "opacity": "toggle"
         });
 
-    })
+    });
     $('#question_type').change(updatequestionattributes);
 
     $('#MinimizeGroupWindow').click(function(){
@@ -87,7 +87,16 @@ $(document).ready(function(){
     $('#MaximizeGroupWindow').click(function(){
         $('#groupdetails').show();
     });
-    $('#tabs').tabs();
+    $('#tabs').tabs({
+        activate: function(event, ui) {
+            if(history.pushState) {
+                history.pushState(null, null, '#'+ui.newPanel.attr('id'));
+            }
+            else {
+                location.hash = ui.newPanel.attr('id');
+            }
+        }
+    });
     $('.tab-nav').tabs();
     $(".flashmessage").each(function() {
         $(this).notify().notify('create','themeroller',{},{custom:true,
@@ -154,8 +163,8 @@ function qTypeDropdownInit()
             {
                 $($(e.currentTarget).data().select2Data.element).qtip('hide');
             }
-            
-            
+
+
         });
         $('#question_type').on('close', function(e) {
             $('#question_type option').qtip('hide');
@@ -276,10 +285,11 @@ function doToolTip()
                     }
                 });
             }
+            $(this).removeAttr('title');
         }
     });
     $("a > img[alt]").data("hasqtip", true ).removeAttr('title');
-    
+
     // Call the popuptip hover rel attribute
     $('.popuptip').each(function(){
         if($(this).attr('rel')){
@@ -309,7 +319,7 @@ function doToolTip()
     // On label
     $('label[title]').each(function() {
         if($(this).attr('title') != '')
-            {
+        {
             $(this).qtip({
                 style: {
                     classes: "qtip-cream qtip-rounded"
@@ -322,7 +332,21 @@ function doToolTip()
         }
     });
     // Loads the tooltips on image
-    $('img[alt],input[src]').each(function() {
+    $('img[title]').each(function() {
+        if($(this).attr('title') != '')
+        {
+            $(this).qtip({
+                style: {
+                    classes: "qtip-light qtip-rounded"
+                },
+                position: {
+                    viewport: $(window),
+                    at: "bottom right"
+                }
+            });
+        }
+    });
+    $('img[alt]:not([title]),input[src]').each(function() {
         if($(this).attr('alt') != '' && !$(this).data("hasqtip")){
             $(this).qtip({
                 content: {
@@ -362,7 +386,6 @@ function doToolTip()
             });
         }
     });
-
 }
 // A function to encode any HTML for qtip
 function htmlEncode(html){
@@ -404,7 +427,6 @@ function ev_gecko_select_keyup_ev(Ev) {
 }
 
 function init_gecko_select_hack() {
-    return true;
     var selects = document.getElementsByTagName("SELECT");
     for(i=0; i<selects.length; i++)
         selects.item(i).addEventListener("keyup", ev_gecko_select_keyup_ev, false);
@@ -448,36 +470,6 @@ function trim(stringToTrim) {
     return stringToTrim.replace(/^\s+|\s+$/g,"");
 }
 
-function DoAdd()
-{
-    if (document.getElementById("available_languages").selectedIndex>-1)
-        {
-        var strText = document.getElementById("available_languages").options[document.getElementById("available_languages").selectedIndex].text;
-        var strId = document.getElementById("available_languages").options[document.getElementById("available_languages").selectedIndex].value;
-        AddItem(document.getElementById("additional_languages"), strText, strId);
-        RemoveItem(document.getElementById("available_languages"), document.getElementById("available_languages").selectedIndex);
-        sortSelect(document.getElementById("additional_languages"));
-        UpdateLanguageIDs();
-    }
-}
-
-function DoRemove(minItems,strmsg)
-{
-    var strText = document.getElementById("additional_languages").options[document.getElementById("additional_languages").selectedIndex].text;
-    var strId = document.getElementById("additional_languages").options[document.getElementById("additional_languages").selectedIndex].value;
-    if (document.getElementById("additional_languages").options.length>minItems)
-        {
-        AddItem(document.getElementById("available_languages"), strText, strId);
-        RemoveItem(document.getElementById("additional_languages"), document.getElementById("additional_languages").selectedIndex);
-        sortSelect(document.getElementById("available_languages"));
-        UpdateLanguageIDs();
-    }
-    else
-        if (strmsg!=''){alert(strmsg);}
-}
-
-
-
 function AddItem(objListBox, strText, strId)
 {
     var newOpt;
@@ -504,28 +496,6 @@ function GetItemIndex(objListBox, strId)
         }
     }
     return -1;
-}
-
-
-function UpdateLanguageIDs(mylangs,confirmtxt)
-{
-    document.getElementById("languageids").value = '';
-
-    var lbBox = document.getElementById("additional_languages");
-    for (var i = 0; i < lbBox.options.length; i++)
-        {
-        document.getElementById("languageids").value = document.getElementById("languageids").value + lbBox.options[i].value+ ' ';
-    }
-    if (mylangs)
-        {
-        if (checklangs(mylangs))
-            {
-            return true;
-        } else
-            {
-            return confirm(confirmtxt);
-        }
-    }
 }
 
 function compareText (option1, option2) {
@@ -681,7 +651,7 @@ jQuery.fn.center = function () {
     this.css("top", ( $(window).height() - this.height() ) / 2+$(window).scrollTop() + "px");
     this.css("left", ( $(window).width() - this.width() ) / 2+$(window).scrollLeft() + "px");
     return this;
-}
+};
 
 // Fix broken substr function with negative start value (in older IE)
 // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/substr
@@ -690,12 +660,12 @@ if ('ab'.substr(-1) != 'b') {
 		return function(start, length) {
 			if (start < 0) start = this.length + start;
 			return substr.call(this, start, length);
-		}
+		};
 	}(String.prototype.substr);
 }
 
 /**
-* Yii CSRF protection divs breaks this script so this function moves the 
+* Yii CSRF protection divs breaks this script so this function moves the
 * hidden CSRF field out of the div and remove it if needed
 * 140207 : Why this function is needed ? Where is the script broken ?
 */
@@ -709,6 +679,33 @@ function removeCSRFDivs()
     });
 }
 
+function linksInDialog()
+{
+    $(function () {
+        var iframe = $('<iframe id="dialog" allowfullscreen></iframe>');
+        var dialog = $("<div></div>").append(iframe).appendTo("body").dialog({
+            autoOpen: false,
+            modal: false,
+            resizable: true,
+            width: "60%",
+            height: $(window).height()*0.6,
+            close: function () {
+                iframe.attr("src", "");
+            }
+        });
+        $(document).on('click','a[target=dialog]',function(event){
+            event.preventDefault();
+            var src = $(this).attr("href");
+            var title = $(this).attr("title");
+            if(!title && $(this).children("img[alt]"))
+                title = $(this).children("img[alt]").attr("alt");
+            iframe.attr({
+                src: src,
+            });
+            dialog.dialog("option", "title", title).dialog("open");
+        });
+    });
+}
 function initializeAjaxProgress()
 {
     $('#ajaxprogress').dialog({
@@ -725,7 +722,7 @@ function initializeAjaxProgress()
     });
     $('#ajaxprogress').bind('ajaxStop', function()
     {
-        
+
         $(this).dialog('close');
     });
 }
@@ -777,7 +774,7 @@ function addHiddenElement(theform,thename,thevalue)
     myel.value = thevalue;
     return myel;
 }
-function onlyUnique(value, index, self) { 
+function onlyUnique(value, index, self) {
     return self.indexOf(value) === index;
 }
 

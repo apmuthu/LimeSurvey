@@ -74,19 +74,19 @@ class RDataWriter extends CsvWriter {
                 }
                     
                 if ($value == 'Y') {            // Yes
-                    return 1;
+                    return 2;
                 } elseif ($value === '') {      // No
-                    return 0;       
+                    return 1;       
                 } else {                        // Not shown
                     return $this->na;
                 }
                 break;
 
-            case 'Y':       // Yes no question
+            case 'Y':       // Yes no question   
                 if ($value == 'Y') {
                     return 1;
                 } elseif ($value == 'N') {
-                    return 0;
+                    return 2;
                 } else {
                     // No data, probably a hidden question
                     return $this->na;

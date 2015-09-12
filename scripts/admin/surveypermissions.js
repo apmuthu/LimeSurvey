@@ -1,8 +1,10 @@
 $(document).ready(function(){
+    $(':checkbox:not(:checked)[data-indeterminate=1]').prop('indeterminate', true);
+
     $(".surveysecurity").tablesorter({
         widgets: ['zebra'],
-	    sortList: [[2,0]],
- 	    headers: { 19: { sorter: false} }
+        sortList: [[2,0]],
+        headers: { 19: { sorter: false} }
     });
 
 
@@ -19,33 +21,29 @@ $(document).ready(function(){
                   }
     });
 
-    $('.mixed').fadeTo(1, .4);
-
     $(".markrow").click(
         function(){
-            $(this).fadeTo(1, 1);
-            $(this).closest('tr').find('input').prop('checked',$(this).prop('checked'));
+            $(this).removeClass('mixed');
+            $(this).closest('tr').find('input').prop('checked',$(this).prop('checked')).prop('indeterminate',false);
         }
-    )
+    );
 
     $('.extended input').click(
      function(){
-            $(this).closest('tr').find('.markrow').fadeTo(1, 1);
             if ($(this).closest('tr').find('.extended input:checked').size()==$(this).closest('tr').find('.extended input').size())
             {
-                $(this).closest('tr').find('.markrow').prop('checked',true);
+                $(this).closest('tr').find('.markrow').prop('checked',true).removeClass('mixed');
             }
             else if ($(this).closest('tr').find('.extended input:checked').size()==0)
             {
-                $(this).closest('tr').find('.markrow').prop('checked',false);
+                $(this).closest('tr').find('.markrow').prop('checked',false).removeClass('mixed');
             }
             else
             {
-                $(this).closest('tr').find('.markrow').prop('checked',true);
-                $(this).closest('tr').find('.markrow').fadeTo(1, .4); //greyed
+                $(this).closest('tr').find('.markrow').prop('checked',true).addClass('mixed');;
             }
      }
-    )
+    );
 
     if ($.cookie('surveysecurityas')!='true')
     {
@@ -53,21 +51,19 @@ $(document).ready(function(){
     }
 
     $('.usersurveypermissions tr').each(function(){
-            $(this).find('.markrow').fadeTo(1, 1);
             if ($(this).find('.extended input:checked').size()==$(this).closest('tr').find('.extended input').size())
             {
-                $(this).find('.markrow').prop('checked',true);
+                $(this).find('.markrow').prop('checked',true).removeClass('mixed');
             }
             else if ($(this).find('.extended input:checked').size()==0)
             {
-                $(this).find('.markrow').prop('checked',false);
+                $(this).find('.markrow').prop('checked',false).removeClass('mixed');
             }
             else
             {
-                $(this).find('.markrow').prop('checked',true);
-                $(this).find('.markrow').fadeTo(1, .4); //greyed
+                $(this).find('.markrow').prop('checked',true).addClass('mixed');
             }
-    })
+    });
 
     $('#btnToggleAdvanced').click(function(){
         extendoptionsvisible=$('.usersurveypermissions .extended').is(':visible');
@@ -81,7 +77,7 @@ $(document).ready(function(){
         }
         updateExtendedButton(!extendoptionsvisible);
         $.cookie('surveysecurityas',!extendoptionsvisible);
-    })
+    });
     updateExtendedButton(true);
 });
 

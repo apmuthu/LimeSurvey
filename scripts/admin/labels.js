@@ -9,6 +9,16 @@
 * other free or open source software licenses.
 * See COPYRIGHT.php for copyright notices and details.
 */
+
+/**
+* delete button
+*/
+$(document).on('click','[data-action="deletelabelset"]',function(event){
+    event.preventDefault();
+    if(confirm($(this).data('confirm'))){
+        sendPost($(this).data('url'),'',['action','lid'],[$(this).data('action'),$('[name="lid"]').val()]);
+    }
+});
 $(document).ready(function(){
     $('#btnDumpLabelSets').click(function(){
         if ($('#labelsets > option:selected').size()==0)
@@ -108,7 +118,7 @@ function quickaddfunction(){
     lsrows=$('#quickaddarea').val().split("\n");
     var separatorchar="\t";
     if (lsrows[0].indexOf("\t")==-1){
-        separatorchar=';'
+        separatorchar=';';
     }
 
 
@@ -123,14 +133,9 @@ function quickaddfunction(){
             k++;
         }
 
-        if (index!=0 || (!lsreplace && $("#tabs div[id^='newedit']:not(:last) tbody>tr").length > 0)){
-            event = {};
-            event.target = $(".btnaddanswer:last");
-            var retcode = add_label(event);
-        }
-        else{
-            var retcode = add_label();
-        }
+		event = {};
+		event.target = $(".btnaddanswer:last");
+		var retcode = add_label(event);
 
         if (typeof(code)!="undefined") {
             $("#code_"+retcode).val(code);
@@ -361,7 +366,7 @@ function code_duplicates_check()
         sValue=$.trim($(this).val());
         $(this).val(sValue);
         codearray.push(sValue);
-    })
+    });
     if ($.inArray('other', codearray)!=-1)
     {
         alert(otherisreserved);

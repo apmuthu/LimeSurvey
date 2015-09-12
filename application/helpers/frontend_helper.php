@@ -13,10 +13,11 @@
 
 function loadanswers()
 {
+    Yii::trace('start', 'survey.loadanswers');
     global $surveyid;
     global $thissurvey, $thisstep;
     global $clienttoken;
-    $clang = Yii::app()->lang;
+
 
     $scid=Yii::app()->request->getQuery('scid');
     if (Yii::app()->request->getParam('loadall') == "reload")
@@ -38,13 +39,14 @@ function loadanswers()
         if (in_array(Yii::app()->db->getDriverName(), array('mssql', 'sqlsrv', 'dblib')))
         {
             // To be validated with mssql, think it's not needed
-            $oCriteria->addCondition(" CAST({{saved_control}}.access_code as varchar(32))=:access_code");
+            $oCriteria->addCondition("(CAST({{saved_control}}.access_code as varchar(64))=:md5_code OR CAST({{saved_control}}.access_code as varchar(64))=:sha256_code)");
         }
         else
         {
-            $oCriteria->addCondition("{{saved_control}}.access_code=:access_code");
+            $oCriteria->addCondition("({{saved_control}}.access_code=:md5_code OR {{saved_control}}.access_code=:sha256_code)");
         }
-        $aParams[':access_code']=md5($sLoadPass);
+        $aParams[':md5_code']=md5($sLoadPass);
+        $aParams[':sha256_code']=hash('sha256',$sLoadPass);
     }
     elseif (isset($_SESSION['survey_'.$surveyid]['srid']))
     {
@@ -67,6 +69,19 @@ function loadanswers()
         //A match has been found. Let's load the values!
         //If this is from an email, build surveysession first
         $_SESSION['survey_'.$surveyid]['LEMtokenResume']=true;
+
+        // If survey come from reload (GET or POST); some value need to be found on saved_control, not on survey
+        if (Yii::app()->request->getParam('loadall') == "reload")
+        {
+            $oSavedSurvey=SavedControl::model()->find("identifier=:identifier AND (access_code=:access_code OR access_code=:sha256_code)",array(':identifier'=>$sLoadName,':access_code'=>md5($sLoadPass),':sha256_code'=>hash('sha256',$sLoadPass)));
+            // We don't need to control if we have one, because we do the test before
+            $_SESSION['survey_'.$surveyid]['scid'] = $oSavedSurvey->scid;
+            $_SESSION['survey_'.$surveyid]['step'] = ($oSavedSurvey->saved_thisstep>1)?$oSavedSurvey->saved_thisstep:1;
+            $thisstep=$_SESSION['survey_'.$surveyid]['step']-1;// deprecated ?
+            $_SESSION['survey_'.$surveyid]['srid'] = $oSavedSurvey->srid;// Seems OK without
+            $_SESSION['survey_'.$surveyid]['refurl'] = $oSavedSurvey->refurl;
+        }
+
         // Get if survey is been answered
         $submitdate=$oResponses->submitdate;
         $aRow=$oResponses->attributes;
@@ -77,12 +92,7 @@ function loadanswers()
                 $clienttoken=$value;
                 $token=$value;
             }
-            elseif ($column == "saved_thisstep" && $thissurvey['alloweditaftercompletion'] != 'Y' )
-            {
-                $_SESSION['survey_'.$surveyid]['step']=($value>1? $value:1) ;
-                $thisstep=$_SESSION['survey_'.$surveyid]['step']-1;
-            }
-            elseif ($column =='lastpage' && isset($_GET['token']))
+            elseif ($column =='lastpage' && !isset($_SESSION['survey_'.$surveyid]['step']))
             {
                 if(is_null($submitdate) || $submitdate=="N")
                 {
@@ -93,24 +103,6 @@ function loadanswers()
                 {
                     $_SESSION['survey_'.$surveyid]['maxstep']=($value>1? $value:1) ;
                 }
-            }
-            /*
-            Commented this part out because otherwise startlanguage would overwrite any other language during a running survey.
-            We will need a new field named 'endlanguage' to save the current language (for example for returning participants)
-            /the language the survey was completed in.
-            elseif ($column =='startlanguage')
-            {
-            $clang = SetSurveyLanguage( $surveyid, $value);
-            UpdateSessionGroupList($value);  // to refresh the language strings in the group list session variable
-            UpdateFieldArray();        // to refresh question titles and question text
-            }*/
-            elseif ($column == "scid")
-            {
-                $_SESSION['survey_'.$surveyid]['scid']=$value;
-            }
-            elseif ($column == "srid")
-            {
-                $_SESSION['survey_'.$surveyid]['srid']=$value;
             }
             elseif ($column == "datestamp")
             {
@@ -150,7 +142,7 @@ function makegraph($currentstep, $total)
 {
     global $thissurvey;
 
-    $clang = Yii::app()->lang;
+
     Yii::app()->getClientScript()->registerCssFile(Yii::app()->getConfig('publicstyleurl') . 'lime-progress.css');
     $size = intval(($currentstep-1)/$total*100);
 
@@ -160,7 +152,7 @@ function makegraph($currentstep, $total)
     value: '.$size.'
     });
     ;});';
-    if (getLanguageRTL($clang->langcode))
+    if (App()->getLocale()->orientation == 'rtl')
     {
         $graph.='
         $(document).ready(function() {
@@ -172,9 +164,9 @@ function makegraph($currentstep, $total)
     </script>
 
     <div id="progress-wrapper">
-    <span class="hide">'.sprintf($clang->gT('You have completed %s%% of this survey'),$size).'</span>
+    <span class="hide">'.sprintf(gT('You have completed %s%% of this survey'),$size).'</span>
     <div id="progress-pre">';
-    if (getLanguageRTL($clang->langcode))
+    if (App()->getLocale()->orientation == 'rtl')
     {
         $graph.='100%';
     }
@@ -186,7 +178,7 @@ function makegraph($currentstep, $total)
     $graph.='</div>
     <div id="progressbar"></div>
     <div id="progress-post">';
-    if (getLanguageRTL($clang->langcode))
+    if (App()->getLocale()->orientation == 'rtl')
     {
         $graph.='0%';
     }
@@ -219,7 +211,6 @@ function makegraph($currentstep, $total)
 function makeLanguageChangerSurvey($sSelectedLanguage)
 {
     $surveyid = Yii::app()->getConfig('surveyID');
-    $clang = Yii::app()->lang;
     Yii::app()->loadHelper("surveytranslator");
 
     $aSurveyLangs = Survey::model()->findByPk($surveyid)->getAllLanguages();
@@ -252,7 +243,7 @@ function makeLanguageChangerSurvey($sSelectedLanguage)
 #            {
 #                $sTargetURL=Yii::app()->getController()->createUrl($route."/lang/$sLangCode");
 #                $aListLang[$sTargetURL]=html_entity_decode($aSurveyLang['nativedescription'], ENT_COMPAT,'UTF-8');
-#                if($clang->langcode==$sLangCode)
+#                if(App()->language==$sLangCode)
 #                    $sSelected=$sTargetURL;
 #            }
         }
@@ -265,11 +256,11 @@ function makeLanguageChangerSurvey($sSelectedLanguage)
         {
             $aListLang[$sLangCode]=html_entity_decode($aSurveyLang['nativedescription'], ENT_COMPAT,'UTF-8');
         }
-        $sSelected=$clang->langcode;
-        $sHTMLCode=CHtml::label($clang->gT("Choose another language"), 'lang',array('class'=>'hide label'));
+        $sSelected=App()->language;
+        $sHTMLCode=CHtml::label(gT("Choose another language"), 'lang',array('class'=>'hide label'));
         $sHTMLCode.=CHtml::dropDownList('lang', $sSelected,$aListLang,array('class'=>$sClass,'data-targeturl'=>$sTargetURL));
         // We don't have to add this button if in previewmode
-        $sHTMLCode.= CHtml::htmlButton($clang->gT("Change the language"),array('type'=>'submit','id'=>"changelangbtn",'value'=>'changelang','name'=>'changelang','class'=>'changelang jshide'));
+        $sHTMLCode.= CHtml::htmlButton(gT("Change the language"),array('type'=>'submit','id'=>"changelangbtn",'value'=>'changelang','name'=>'changelang','class'=>'changelang jshide'));
         return $sHTMLCode;
     }
     else
@@ -305,17 +296,17 @@ function makeLanguageChanger($sSelectedLanguage)
 #            }
 #        }
 #        $sHTMLCode .= "</select>\n";
-        $clang = Yii::app()->lang;
+
         $sClass= "languagechanger";
         foreach ($aLanguages as $sLangCode => $aLanguage)
             $aListLang[$sLangCode]=html_entity_decode($aLanguage['nativedescription'], ENT_COMPAT,'UTF-8').' - '.$aLanguage['description'];
         $sSelected=$sSelectedLanguage;
 
         $sHTMLCode= CHtml::beginForm(App()->createUrl('surveys/publiclist'),'get');
-        $sHTMLCode.=CHtml::label($clang->gT("Choose another language"), 'lang',array('class'=>'hide label'));
+        $sHTMLCode.=CHtml::label(gT("Choose another language"), 'lang',array('class'=>'hide label'));
         $sHTMLCode.= CHtml::dropDownList('lang', $sSelected,$aListLang,array('class'=>$sClass));
-        //$sHTMLCode.= CHtml::htmlButton($clang->gT("Change the language"),array('type'=>'submit','id'=>"changelangbtn",'value'=>'changelang','name'=>'changelang','class'=>'jshide'));
-        $sHTMLCode.="<button class='changelang jshide' value='changelang' id='changelangbtn' type='submit'>".$clang->gT("Change the language")."</button>";
+        //$sHTMLCode.= CHtml::htmlButton(gT("Change the language"),array('type'=>'submit','id'=>"changelangbtn",'value'=>'changelang','name'=>'changelang','class'=>'jshide'));
+        $sHTMLCode.="<button class='changelang jshide' value='changelang' id='changelangbtn' type='submit'>".gT("Change the language")."</button>";
         $sHTMLCode.= CHtml::endForm();
         return $sHTMLCode;
     }
@@ -333,7 +324,7 @@ function makeLanguageChanger($sSelectedLanguage)
 function checkUploadedFileValidity($surveyid, $move, $backok=null)
 {
     global $thisstep;
-    $clang = Yii::app()->lang;
+
 
     if (!isset($backok) || $backok != "Y")
     {
@@ -377,7 +368,7 @@ function checkUploadedFileValidity($surveyid, $move, $backok=null)
                                 if ($file['size'] > $validation['max_filesize'] * 1000)
                                 {
                                     $filenotvalidated = array();
-                                    $filenotvalidated[$field."_file_".$i] = sprintf($clang->gT("Sorry, the uploaded file (%s) is larger than the allowed filesize of %s KB."), $file['size'], $validation['max_filesize']);
+                                    $filenotvalidated[$field."_file_".$i] = sprintf(gT("Sorry, the uploaded file (%s) is larger than the allowed filesize of %s KB."), $file['size'], $validation['max_filesize']);
                                     $append = true;
                                 }
 
@@ -390,13 +381,13 @@ function checkUploadedFileValidity($surveyid, $move, $backok=null)
                                 {
                                     if (isset($append) && $append)
                                     {
-                                        $filenotvalidated[$field."_file_".$i] .= sprintf($clang->gT("Sorry, only %s extensions are allowed!"),$validation['allowed_filetypes']);
+                                        $filenotvalidated[$field."_file_".$i] .= sprintf(gT("Sorry, only %s extensions are allowed!"),$validation['allowed_filetypes']);
                                         unset($append);
                                     }
                                     else
                                     {
                                         $filenotvalidated = array();
-                                        $filenotvalidated[$field."_file_".$i] .= sprintf($clang->gT("Sorry, only %s extensions are allowed!"),$validation['allowed_filetypes']);
+                                        $filenotvalidated[$field."_file_".$i] .= sprintf(gT("Sorry, only %s extensions are allowed!"),$validation['allowed_filetypes']);
                                     }
                                 }
                             }
@@ -408,7 +399,7 @@ function checkUploadedFileValidity($surveyid, $move, $backok=null)
                     if (isset($validation['min_num_of_files']) && $filecount < $validation['min_num_of_files'] && LimeExpressionManager::QuestionIsRelevant($fieldmap[$field]['qid']))
                     {
                         $filenotvalidated = array();
-                        $filenotvalidated[$field] = $clang->gT("The minimum number of files has not been uploaded.");
+                        $filenotvalidated[$field] = gT("The minimum number of files has not been uploaded.");
                     }
                 }
             }
@@ -474,9 +465,9 @@ function submittokens($quotaexit=false)
     $today = dateShift(date("Y-m-d H:i:s"), "Y-m-d H:i", Yii::app()->getConfig("timeadjust"));
 
     // check how many uses the token has left
-	$token = Token::model($surveyid)->findByAttributes(array('token' => $clienttoken));
+    $token = Token::model($surveyid)->findByAttributes(array('token' => $clienttoken));
 
-	if ($quotaexit==true)
+    if ($quotaexit==true)
     {
         $token->completed = 'Q';
         $token->usesleft--;
@@ -496,7 +487,7 @@ function submittokens($quotaexit=false)
             {
                 $slquery = SurveyLink::model()->find('participant_id = :pid AND survey_id = :sid AND token_id = :tid', array(':pid'=> $token->participant_id, ':sid'=>$surveyid, ':tid'=>$token->tid));
                 if ($slquery)
-                {                
+                {
                     if (isTokenCompletedDatestamped($thissurvey))
                     {
                         $slquery->date_completed = $today;
@@ -519,7 +510,6 @@ function submittokens($quotaexit=false)
          //   if($token->completed == "Y" || $token->completed == $today)
 //            {
                 $from = "{$thissurvey['adminname']} <{$thissurvey['adminemail']}>";
-                $to = $token->email;
                 $subject=$thissurvey['email_confirm_subj'];
 
                 $aReplacementVars=array();
@@ -533,7 +523,7 @@ function submittokens($quotaexit=false)
                 // added survey url in replacement vars
                 $surveylink = Yii::app()->createAbsoluteUrl("/survey/index/sid/{$surveyid}",array('lang'=>$_SESSION['survey_'.$surveyid]['s_lang'],'token'=>$token->token));
                 $aReplacementVars['SURVEYURL'] = $surveylink;
-                
+
                 $attrfieldnames=getAttributeFieldNames($surveyid);
                 foreach ($attrfieldnames as $attr_name)
                 {
@@ -543,7 +533,7 @@ function submittokens($quotaexit=false)
                 $dateformatdatat=getDateFormatData($thissurvey['surveyls_dateformat']);
                 $numberformatdatat = getRadixPointData($thissurvey['surveyls_numberformat']);
                 $redata=array('thissurvey'=>$thissurvey);
-                $subject=templatereplace($subject,$aReplacementVars,$redata);
+                $subject=templatereplace($subject,$aReplacementVars,$redata,'email_confirm_subj', false, NULL, array(), true );
 
                 $subject=html_entity_decode($subject,ENT_QUOTES,$emailcharset);
 
@@ -558,7 +548,7 @@ function submittokens($quotaexit=false)
 
                 $message=$thissurvey['email_confirm'];
                 //$message=ReplaceFields($message, $fieldsarray, true);
-                $message=templatereplace($message,$aReplacementVars,$redata);
+                $message=templatereplace($message,$aReplacementVars,$redata,'email_confirm', false, NULL, array(), true );
                 if (!$ishtml)
                 {
                     $message=strip_tags(breakToNewline(html_entity_decode($message,ENT_QUOTES,$emailcharset)));
@@ -569,9 +559,10 @@ function submittokens($quotaexit=false)
                 }
 
                 //Only send confirmation email if there is a valid email address
-            if (validateEmailAddress($to)) {
+            $sToAddress=validateEmailAddresses($token->email);
+            if ($sToAddress) {
                 $aAttachments = unserialize($thissurvey['attachments']);
-    
+
                 $aRelevantAttachments = array();
                 /*
                  * Iterate through attachments and check them for relevance.
@@ -588,7 +579,7 @@ function submittokens($quotaexit=false)
                         }
                     }
                 }
-                SendEmailMessage($message, $subject, $to, $from, $sitename, $ishtml, null, $aRelevantAttachments);
+                SendEmailMessage($message, $subject, $sToAddress, $from, $sitename, $ishtml, null, $aRelevantAttachments);
             }
      //   } else {
                 // Leave it to send optional confirmation at closed token
@@ -604,14 +595,14 @@ function sendSubmitNotifications($surveyid)
 {
     // @todo: Remove globals
     global $thissurvey, $maildebug, $tokensexist;
-    
+
     if (trim($thissurvey['adminemail'])=='')
     {
         return;
     }
-    
+
     $homeurl=Yii::app()->createAbsoluteUrl('/admin');
-    $clang = Yii::app()->lang;
+
     $sitename = Yii::app()->getConfig("sitename");
 
     $debug=Yii::app()->getConfig('debug');
@@ -621,7 +612,7 @@ function sendSubmitNotifications($surveyid)
 
     if ($thissurvey['allowsave'] == "Y" && isset($_SESSION['survey_'.$surveyid]['scid']))
     {
-        $aReplacementVars['RELOADURL']="".Yii::app()->getController()->createUrl("/survey/index/sid/{$surveyid}/loadall/reload/scid/".$_SESSION['survey_'.$surveyid]['scid']."/loadname/".urlencode($_SESSION['survey_'.$surveyid]['holdname'])."/loadpass/".urlencode($_SESSION['survey_'.$surveyid]['holdpass'])."/lang/".urlencode($clang->langcode));
+        $aReplacementVars['RELOADURL']="".Yii::app()->getController()->createUrl("/survey/index/sid/{$surveyid}/loadall/reload/scid/".$_SESSION['survey_'.$surveyid]['scid']."/loadname/".urlencode($_SESSION['survey_'.$surveyid]['holdname'])."/loadpass/".urlencode($_SESSION['survey_'.$surveyid]['holdpass'])."/lang/".urlencode(App()->language));
         if ($bIsHTML)
         {
             $aReplacementVars['RELOADURL']="<a href='{$aReplacementVars['RELOADURL']}'>{$aReplacementVars['RELOADURL']}</a>";
@@ -657,6 +648,7 @@ function sendSubmitNotifications($surveyid)
         $aRecipient=explode(";", ReplaceFields($thissurvey['emailnotificationto'],array('ADMINEMAIL' =>$thissurvey['adminemail'] ), true));
         foreach($aRecipient as $sRecipient)
         {
+            $sRecipient=trim($sRecipient);
             if(validateEmailAddress($sRecipient))
             {
                 $aEmailNotificationTo[]=$sRecipient;
@@ -675,6 +667,7 @@ function sendSubmitNotifications($surveyid)
         $aRecipient=explode(";", ReplaceFields($thissurvey['emailresponseto'],array('ADMINEMAIL' =>$thissurvey['adminemail'] ), true));
         foreach($aRecipient as $sRecipient)
         {
+            $sRecipient=trim($sRecipient);
             if(validateEmailAddress($sRecipient))
             {
                 $aEmailResponseTo[]=$sRecipient;
@@ -690,18 +683,17 @@ function sendSubmitNotifications($surveyid)
         {
             if (substr($sFieldname,0,4)=='gid_')
             {
-
-                $ResultTableHTML .= "\t<tr class='printanswersgroup'><td colspan='2'>{$fname[0]}</td></tr>\n";
+                $ResultTableHTML .= "\t<tr class='printanswersgroup'><td colspan='2'>".strip_tags($fname[0])."</td></tr>\n";
                 $ResultTableText .="\n{$fname[0]}\n\n";
             }
             elseif (substr($sFieldname,0,4)=='qid_')
             {
-                $ResultTableHTML .= "\t<tr class='printanswersquestionhead'><td  colspan='2'>{$fname[0]}</td></tr>\n";
+                $ResultTableHTML .= "\t<tr class='printanswersquestionhead'><td  colspan='2'>".strip_tags($fname[0])."</td></tr>\n";
                 $ResultTableText .="\n{$fname[0]}\n";
             }
             else
             {
-                $ResultTableHTML .= "\t<tr class='printanswersquestion'><td>{$fname[0]} {$fname[1]}</td><td class='printanswersanswertext'>{$fname[2]}</td></tr>";
+                $ResultTableHTML .= "\t<tr class='printanswersquestion'><td>".strip_tags("{$fname[0]} {$fname[1]}")."</td><td class='printanswersanswertext'>".CHtml::encode($fname[2])."</td></tr>\n";
                 $ResultTableText .="     {$fname[0]} {$fname[1]}: {$fname[2]}\n";
             }
         }
@@ -721,7 +713,7 @@ function sendSubmitNotifications($surveyid)
     $sFrom = $thissurvey['adminname'].' <'.$thissurvey['adminemail'].'>';
 
     $aAttachments = unserialize($thissurvey['attachments']);
-    
+
     $aRelevantAttachments = array();
     /*
      * Iterate through attachments and check them for relevance.
@@ -738,15 +730,15 @@ function sendSubmitNotifications($surveyid)
             }
         }
     }
-    
+
     $redata=compact(array_keys(get_defined_vars()));
     if (count($aEmailNotificationTo)>0)
     {
-        $sMessage=templatereplace($thissurvey['email_admin_notification'],$aReplacementVars,$redata,'frontend_helper[1398]',($thissurvey['anonymized'] == "Y"),NULL, array(), true);
-        $sSubject=templatereplace($thissurvey['email_admin_notification_subj'],$aReplacementVars,$redata,'frontend_helper[1399]',($thissurvey['anonymized'] == "Y"),NULL, array(), true);
+        $sMessage=templatereplace($thissurvey['email_admin_notification'],$aReplacementVars,$redata,'admin_notification',$thissurvey['anonymized'] == "Y",NULL, array(), true);
+        $sSubject=templatereplace($thissurvey['email_admin_notification_subj'],$aReplacementVars,$redata,'admin_notification_subj',($thissurvey['anonymized'] == "Y"),NULL, array(), true);
         foreach ($aEmailNotificationTo as $sRecipient)
         {
-        if (!SendEmailMessage($sMessage, $sSubject, $sRecipient, $sFrom, $sitename, true, getBounceEmail($surveyid), $aRelevantAttachments))
+        if (!SendEmailMessage($sMessage, $sSubject, $sRecipient, $sFrom, $sitename, $bIsHTML, getBounceEmail($surveyid), $aRelevantAttachments))
             {
                 if ($debug>0)
                 {
@@ -774,11 +766,11 @@ function sendSubmitNotifications($surveyid)
     }
     if (count($aEmailResponseTo)>0)
     {
-        $sMessage=templatereplace($thissurvey['email_admin_responses'],$aReplacementVars,$redata,'frontend_helper[1414]',($thissurvey['anonymized'] == "Y"));
-        $sSubject=templatereplace($thissurvey['email_admin_responses_subj'],$aReplacementVars,$redata,'frontend_helper[1415]',($thissurvey['anonymized'] == "Y"));
+        $sMessage=templatereplace($thissurvey['email_admin_responses'],$aReplacementVars,$redata,'detailed_admin_notification',$thissurvey['anonymized'] == "Y",NULL, array(), true);
+        $sSubject=templatereplace($thissurvey['email_admin_responses_subj'],$aReplacementVars,$redata,'detailed_admin_notification_subj',$thissurvey['anonymized'] == "Y",NULL, array(), true);
         foreach ($aEmailResponseTo as $sRecipient)
         {
-        if (!SendEmailMessage($sMessage, $sSubject, $sRecipient, $sFrom, $sitename, true, getBounceEmail($surveyid), $aRelevantAttachments))
+        if (!SendEmailMessage($sMessage, $sSubject, $sRecipient, $sFrom, $sitename, $bIsHTML, getBounceEmail($surveyid), $aRelevantAttachments))
             {
                 if ($debug>0)
                 {
@@ -800,36 +792,36 @@ function submitfailed($errormsg='')
     global $thissurvey;
     global $subquery, $surveyid;
 
-    $clang = Yii::app()->lang;
+
 
     $completed = "<br /><strong><font size='2' color='red'>"
-    . $clang->gT("Did Not Save")."</strong></font><br /><br />\n\n"
-    . $clang->gT("An unexpected error has occurred and your responses cannot be saved.")."<br /><br />\n";
+    . gT("Did Not Save")."</strong></font><br /><br />\n\n"
+    . gT("An unexpected error has occurred and your responses cannot be saved.")."<br /><br />\n";
     if ($thissurvey['adminemail'])
     {
-        $completed .= $clang->gT("Your responses have not been lost and have been emailed to the survey administrator and will be entered into our database at a later point.")."<br /><br />\n";
+        $completed .= gT("Your responses have not been lost and have been emailed to the survey administrator and will be entered into our database at a later point.")."<br /><br />\n";
         if ($debug>0)
         {
             $completed.='Error message: '.htmlspecialchars($errormsg).'<br />';
         }
-        $email=$clang->gT("An error occurred saving a response to survey id","unescaped")." ".$thissurvey['name']." - $surveyid\n\n";
-        $email .= $clang->gT("DATA TO BE ENTERED","unescaped").":\n";
+        $email=gT("An error occurred saving a response to survey id","unescaped")." ".$thissurvey['name']." - $surveyid\n\n";
+        $email .= gT("DATA TO BE ENTERED","unescaped").":\n";
         foreach ($_SESSION['survey_'.$surveyid]['insertarray'] as $value)
         {
             $email .= "$value: {$_SESSION['survey_'.$surveyid][$value]}\n";
         }
-        $email .= "\n".$clang->gT("SQL CODE THAT FAILED","unescaped").":\n"
+        $email .= "\n".gT("SQL CODE THAT FAILED","unescaped").":\n"
         . "$subquery\n\n"
-        . $clang->gT("ERROR MESSAGE","unescaped").":\n"
+        . gT("ERROR MESSAGE","unescaped").":\n"
         . $errormsg."\n\n";
-        SendEmailMessage($email, $clang->gT("Error saving results","unescaped"), $thissurvey['adminemail'], $thissurvey['adminemail'], "LimeSurvey", false, getBounceEmail($surveyid));
+        SendEmailMessage($email, gT("Error saving results","unescaped"), $thissurvey['adminemail'], $thissurvey['adminemail'], "LimeSurvey", false, getBounceEmail($surveyid));
         //echo "<!-- EMAIL CONTENTS:\n$email -->\n";
         //An email has been sent, so we can kill off this session.
         killSurveySession($surveyid);
     }
     else
     {
-        $completed .= "<a href='javascript:location.reload()'>".$clang->gT("Try to submit again")."</a><br /><br />\n";
+        $completed .= "<a href='javascript:location.reload()'>".gT("Try to submit again")."</a><br /><br />\n";
         $completed .= $subquery;
     }
     return $completed;
@@ -843,20 +835,21 @@ function submitfailed($errormsg='')
 */
 function buildsurveysession($surveyid,$preview=false)
 {
+    Yii::trace('start', 'survey.buildsurveysession');
     global $secerror, $clienttoken;
     global $tokensexist;
     //global $surveyid;
     global $move, $rooturl;
 
-    $clang = Yii::app()->lang;
-    $sLangCode=$clang->langcode;
+
+    $sLangCode=App()->language;
     $languagechanger=makeLanguageChangerSurvey($sLangCode);
     if(!$preview)
         $preview=Yii::app()->getConfig('previewmode');
-	$thissurvey = getSurveyInfo($surveyid,$sLangCode);
+    $thissurvey = getSurveyInfo($surveyid,$sLangCode);
 
-    $_SESSION['survey_'.$surveyid]['templatename']=validateTemplateDir($thissurvey['template']);
-    $_SESSION['survey_'.$surveyid]['templatepath']=getTemplatePath($_SESSION['survey_'.$surveyid]['templatename']).DIRECTORY_SEPARATOR;
+    $_SESSION['survey_'.$surveyid]['templatename']=$thissurvey['template'];// $thissurvey['template'] already fixed by model : but why put this in session ?
+    $_SESSION['survey_'.$surveyid]['templatepath']=getTemplatePath($thissurvey['template']).DIRECTORY_SEPARATOR;
     $sTemplatePath=$_SESSION['survey_'.$surveyid]['templatepath'];
 
     $loadsecurity = returnGlobal('loadsecurity',true);
@@ -880,11 +873,11 @@ function buildsurveysession($surveyid,$preview=false)
 
             if (isset($loadsecurity))
             { // was a bad answer
-                echo "<font color='#FF0000'>".$clang->gT("The answer to the security question is incorrect.")."</font><br />";
+                echo "<font color='#FF0000'>".gT("The answer to the security question is incorrect.")."</font><br />";
             }
 
-            echo "<p class='captcha'>".$clang->gT("Please confirm access to survey by answering the security question below and click continue.")."</p>"
-            .CHtml::form(array("/survey/index/sid/{$surveyid}"), 'post', array('class'=>'captcha'))."
+            echo "<p class='captcha'>".gT("Please confirm access to survey by answering the security question below and click continue.")."</p>"
+            .CHtml::form(array("/survey/index","sid"=>$surveyid), 'post', array('class'=>'captcha'))."
             <table align='center'>
             <tr>
             <td align='right' valign='middle'>
@@ -895,10 +888,10 @@ function buildsurveysession($surveyid,$preview=false)
             && isset($_GET['loadname']) && isset($_GET['loadpass']))
             {
                 echo "
-                <input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'])."' id='loadall' />
+                <input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'],ENT_QUOTES, 'UTF-8')."' id='loadall' />
                 <input type='hidden' name='scid' value='".returnGlobal('scid',true)."' id='scid' />
-                <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'])."' id='loadname' />
-                <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'])."' id='loadpass' />";
+                <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'],ENT_QUOTES, 'UTF-8')."' id='loadname' />
+                <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'],ENT_QUOTES, 'UTF-8')."' id='loadpass' />";
             }
 
             echo "
@@ -907,12 +900,12 @@ function buildsurveysession($surveyid,$preview=false)
             if (function_exists("ImageCreate") && isCaptchaEnabled('surveyaccessscreen', $thissurvey['usecaptcha']))
             {
                 echo "<tr>
-                <td align='center' valign='middle'><label for='captcha'>".$clang->gT("Security question:")."</label></td><td align='left' valign='middle'><table><tr><td valign='middle'><img src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /></td>
+                <td align='center' valign='middle'><label for='captcha'>".gT("Security question:")."</label></td><td align='left' valign='middle'><table><tr><td valign='middle'><img src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /></td>
                 <td valign='middle'><input id='captcha' type='text' size='5' maxlength='3' name='loadsecurity' value='' /></td></tr></table>
                 </td>
                 </tr>";
             }
-            echo "<tr><td colspan='2' align='center'><input class='submit' type='submit' value='".$clang->gT("Continue")."' /></td></tr>
+            echo "<tr><td colspan='2' align='center'><input class='submit' type='submit' value='".gT("Continue")."' /></td></tr>
             </table>
             </form>";
 
@@ -942,28 +935,29 @@ function buildsurveysession($surveyid,$preview=false)
 
         // DISPLAY REGISTER-PAGE if needed
         // DISPLAY CAPTCHA if needed
-        sendCacheHeaders();
-        doHeader();
-
-        $redata = compact(array_keys(get_defined_vars()));
-        echo templatereplace(file_get_contents($sTemplatePath."startpage.pstpl"),array(),$redata,'frontend_helper[1594]');
-        //echo makedropdownlist();
-        echo templatereplace(file_get_contents($sTemplatePath."survey.pstpl"),array(),$redata,'frontend_helper[1596]');
-        if (isset($thissurvey) && $thissurvey['allowregister'] == "Y")
-        {
-            echo templatereplace(file_get_contents($sTemplatePath."register.pstpl"),array(),$redata,'frontend_helper[1599]');
+         if (isset($thissurvey) && $thissurvey['allowregister'] == "Y")
+         {
+            // Add the event and test if done
+            Yii::app()->runController("register/index/sid/{$surveyid}");
+            Yii::app()->end();
         }
         else
         {
+            sendCacheHeaders();
+            doHeader();
+            $redata = compact(array_keys(get_defined_vars()));
+            echo templatereplace(file_get_contents($sTemplatePath."startpage.pstpl"),array(),$redata,'frontend_helper[1594]');
+            //echo makedropdownlist();
+            echo templatereplace(file_get_contents($sTemplatePath."survey.pstpl"),array(),$redata,'frontend_helper[1596]');
             // ->renderPartial('entertoken_view');
             if (isset($secerror)) echo "<span class='error'>".$secerror."</span><br />";
-            echo '<div id="wrapper"><p id="tokenmessage">'.$clang->gT("This is a controlled survey. You need a valid token to participate.")."<br />";
-            echo $clang->gT("If you have been issued a token, please enter it in the box below and click continue.")."</p>
+            echo '<div id="wrapper"><p id="tokenmessage">'.gT("This is a controlled survey. You need a valid token to participate.")."<br />";
+            echo gT("If you have been issued a token, please enter it in the box below and click continue.")."</p>
             <script type='text/javascript'>var focus_element='#token';</script>"
-            .CHtml::form(array("/survey/index/sid/{$surveyid}"), 'post', array('id'=>'tokenform','autocomplete'=>'off'))."
+            .CHtml::form(array("/survey/index","sid"=>$surveyid), 'post', array('id'=>'tokenform','autocomplete'=>'off'))."
             <ul>
             <li>";?>
-            <label for='token'><?php $clang->eT("Token:");?></label><input class='text <?php echo $kpclass?>' id='token' type='password' name='token' value='' />
+            <label for='token'><?php eT("Token:");?></label><input class='text <?php echo $kpclass?>' id='token' type='password' name='token' value='' />
             <?php
             echo "<input type='hidden' name='sid' value='".$surveyid."' id='sid' />
             <input type='hidden' name='lang' value='".$sLangCode."' id='lang' />";
@@ -978,29 +972,28 @@ function buildsurveysession($surveyid,$preview=false)
             && isset($_GET['loadname']) && isset($_GET['loadpass']))
             {
                 echo "
-                <input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'])."' id='loadall' />
+                <input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'],ENT_QUOTES, 'UTF-8')."' id='loadall' />
                 <input type='hidden' name='scid' value='".returnGlobal('scid',true)."' id='scid' />
-                <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'])."' id='loadname' />
-                <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'])."' id='loadpass' />";
+                <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'],ENT_QUOTES, 'UTF-8')."' id='loadname' />
+                <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'],ENT_QUOTES, 'UTF-8')."' id='loadpass' />";
             }
             echo "</li>";
 
             if (function_exists("ImageCreate") && isCaptchaEnabled('surveyaccessscreen', $thissurvey['usecaptcha']))
             {
                 echo "<li>
-                <label for='captchaimage'>".$clang->gT("Security Question")."</label><img id='captchaimage' src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /><input type='text' size='5' maxlength='3' name='loadsecurity' value='' />
+                <label for='captchaimage'>".gT("Security Question")."</label><img id='captchaimage' src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /><input type='text' size='5' maxlength='3' name='loadsecurity' value='' />
                 </li>";
             }
             echo "<li>
-            <input class='submit button' type='submit' value='".$clang->gT("Continue")."' />
+            <input class='submit button' type='submit' value='".gT("Continue")."' />
             </li>
             </ul>
             </form></div>";
+            echo templatereplace(file_get_contents($sTemplatePath."endpage.pstpl"),array(),$redata,'frontend_helper[1645]');
+            doFooter();
+            exit;
         }
-
-        echo templatereplace(file_get_contents($sTemplatePath."endpage.pstpl"),array(),$redata,'frontend_helper[1645]');
-        doFooter();
-        exit;
     }
     // TOKENS REQUIRED, A TOKEN PROVIDED
     // SURVEY WITH NO NEED TO USE CAPTCHA
@@ -1010,12 +1003,12 @@ function buildsurveysession($surveyid,$preview=false)
 
         //check if token actually does exist
         // check also if it is allowed to change survey after completion
-		if ($thissurvey['alloweditaftercompletion'] == 'Y' ) {
+        if ($thissurvey['alloweditaftercompletion'] == 'Y' ) {
             $oTokenEntry = Token::model($surveyid)->findByAttributes(array('token'=>$clienttoken));
         } else {
             $oTokenEntry = Token::model($surveyid)->usable()->incomplete()->findByAttributes(array('token' => $clienttoken));
         }
-		if (!isset($oTokenEntry))
+        if (!isset($oTokenEntry))
         {
             //TOKEN DOESN'T EXIST OR HAS ALREADY BEEN USED. EXPLAIN PROBLEM AND EXIT
 
@@ -1026,9 +1019,9 @@ function buildsurveysession($surveyid,$preview=false)
             $redata = compact(array_keys(get_defined_vars()));
             echo templatereplace(file_get_contents($sTemplatePath."startpage.pstpl"),array(),$redata,'frontend_helper[1676]');
             echo templatereplace(file_get_contents($sTemplatePath."survey.pstpl"),array(),$redata,'frontend_helper[1677]');
-            echo '<div id="wrapper"><p id="tokenmessage">'.$clang->gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />\n"
-            ."\t".$clang->gT("The token you have provided is either not valid, or has already been used.")."<br /><br />\n"
-            ."\t".sprintf($clang->gT("For further information please contact %s"), $thissurvey['adminname'])
+            echo '<div id="wrapper"><p id="tokenmessage">'.gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />\n"
+            ."\t".gT("The token you have provided is either not valid, or has already been used.")."<br /><br />\n"
+            ."\t".sprintf(gT("For further information please contact %s"), $thissurvey['adminname'])
             ." (<a href='mailto:{$thissurvey['adminemail']}'>"
             ."{$thissurvey['adminemail']}</a>)</p></div>\n";
 
@@ -1046,16 +1039,16 @@ function buildsurveysession($surveyid,$preview=false)
         if (isset($loadsecurity) &&
         isset($_SESSION['survey_'.$surveyid]['secanswer']) &&
         $loadsecurity == $_SESSION['survey_'.$surveyid]['secanswer'])
-        {          
-			if ($thissurvey['alloweditaftercompletion'] == 'Y' )
+        {
+            if ($thissurvey['alloweditaftercompletion'] == 'Y' )
             {
                 $oTokenEntry = Token::model($surveyid)->findByAttributes(array('token'=> $clienttoken));
             }
             else
             {
                 $oTokenEntry = Token::model($surveyid)->incomplete()->findByAttributes(array(
-					'token' => $clienttoken
-				));
+                    'token' => $clienttoken
+                ));
            }
             if (!isset($oTokenEntry))
             {
@@ -1068,9 +1061,9 @@ function buildsurveysession($surveyid,$preview=false)
                 echo templatereplace(file_get_contents($sTemplatePath."survey.pstpl"),array(),$redata,'frontend_helper[1720]');
                 echo "\t<div id='wrapper'>\n"
                 ."\t<p id='tokenmessage'>\n"
-                ."\t".$clang->gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />\n"
-                ."\t".$clang->gT("The token you have provided is either not valid, or has already been used.")."<br/><br />\n"
-                ."\t".sprintf($clang->gT("For further information please contact %s"), $thissurvey['adminname'])
+                ."\t".gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />\n"
+                ."\t".gT("The token you have provided is either not valid, or has already been used.")."<br/><br />\n"
+                ."\t".sprintf(gT("For further information please contact %s"), $thissurvey['adminname'])
                 ." (<a href='mailto:{$thissurvey['adminemail']}'>"
                 ."{$thissurvey['adminemail']}</a>)\n"
                 ."\t</p>\n"
@@ -1104,15 +1097,15 @@ function buildsurveysession($surveyid,$preview=false)
                     echo '<div id="wrapper"><p id="tokenmessage">';
                     if (isset($loadsecurity))
                     { // was a bad answer
-                        echo "<span class='error'>".$clang->gT("The answer to the security question is incorrect.")."</span><br />";
+                        echo "<span class='error'>".gT("The answer to the security question is incorrect.")."</span><br />";
                     }
 
-                    echo $clang->gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />";
+                    echo gT("This is a controlled survey. You need a valid token to participate.")."<br /><br />";
                     // IF TOKEN HAS BEEN GIVEN THEN AUTOFILL IT
                     // AND HIDE ENTRY FIELD
                     if (!isset($gettoken))
                     {
-                        echo $clang->gT("If you have been issued a token, please enter it in the box below and click continue.")."</p>
+                        echo gT("If you have been issued a token, please enter it in the box below and click continue.")."</p>
                         <form id='tokenform' method='get' action='".Yii::app()->getController()->createUrl("/survey/index")."'>
                         <ul>
                         <li>
@@ -1121,17 +1114,17 @@ function buildsurveysession($surveyid,$preview=false)
                         if (isset($_GET['loadall']) && isset($_GET['scid'])
                         && isset($_GET['loadname']) && isset($_GET['loadpass']))
                         {
-                            echo "<input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'])."' id='loadall' />
+                            echo "<input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'],ENT_QUOTES, 'UTF-8')."' id='loadall' />
                             <input type='hidden' name='scid' value='".returnGlobal('scid',true)."' id='scid' />
-                            <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'])."' id='loadname' />
-                            <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'])."' id='loadpass' />";
+                            <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'],ENT_QUOTES, 'UTF-8')."' id='loadname' />
+                            <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'],ENT_QUOTES, 'UTF-8')."' id='loadpass' />";
                         }
 
-                        echo '<label for="token">'.$clang->gT("Token")."</label><input class='text' type='password' id='token' name='token'></li>";
+                        echo '<label for="token">'.gT("Token")."</label><input class='text' type='password' id='token' name='token'></li>";
                 }
                 else
                 {
-                    echo $clang->gT("Please confirm the token by answering the security question below and click continue.")."</p>
+                    echo gT("Please confirm the token by answering the security question below and click continue.")."</p>
                     <form id='tokenform' method='get' action='".Yii::app()->getController()->createUrl("/survey/index")."'>
                     <ul>
                     <li>
@@ -1140,12 +1133,12 @@ function buildsurveysession($surveyid,$preview=false)
                     if (isset($_GET['loadall']) && isset($_GET['scid'])
                     && isset($_GET['loadname']) && isset($_GET['loadpass']))
                     {
-                        echo "<input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'])."' id='loadall' />
+                        echo "<input type='hidden' name='loadall' value='".htmlspecialchars($_GET['loadall'],ENT_QUOTES, 'UTF-8')."' id='loadall' />
                         <input type='hidden' name='scid' value='".returnGlobal('scid',true)."' id='scid' />
-                        <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'])."' id='loadname' />
-                        <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'])."' id='loadpass' />";
+                        <input type='hidden' name='loadname' value='".htmlspecialchars($_GET['loadname'],ENT_QUOTES, 'UTF-8')."' id='loadname' />
+                        <input type='hidden' name='loadpass' value='".htmlspecialchars($_GET['loadpass'],ENT_QUOTES, 'UTF-8')."' id='loadpass' />";
                     }
-                    echo '<label for="token">'.$clang->gT("Token:")."</label><span id='token'>$gettoken</span>"
+                    echo '<label for="token">'.gT("Token:")."</label><span id='token'>$gettoken</span>"
                     ."<input type='hidden' name='token' value='$gettoken'></li>";
                 }
 
@@ -1153,10 +1146,10 @@ function buildsurveysession($surveyid,$preview=false)
                 if (function_exists("ImageCreate") && isCaptchaEnabled('surveyaccessscreen', $thissurvey['usecaptcha']))
                 {
                     echo "<li>
-                    <label for='captchaimage'>".$clang->gT("Security Question")."</label><img id='captchaimage' src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /><input type='text' size='5' maxlength='3' name='loadsecurity' value='' />
+                    <label for='captchaimage'>".gT("Security Question")."</label><img id='captchaimage' src='".Yii::app()->getController()->createUrl('/verification/image/sid/'.$surveyid)."' alt='captcha' /><input type='text' size='5' maxlength='3' name='loadsecurity' value='' />
                     </li>";
                 }
-                echo "<li><input class='submit' type='submit' value='".$clang->gT("Continue")."' /></li>
+                echo "<li><input class='submit' type='submit' value='".gT("Continue")."' /></li>
                 </ul>
                 </form>
                 </id>";
@@ -1177,36 +1170,23 @@ function buildsurveysession($surveyid,$preview=false)
     unset($_SESSION['survey_'.$surveyid]['groupReMap']);
     $_SESSION['survey_'.$surveyid]['fieldnamesInfo'] = Array();
 
-
-    //RL: multilingual support
-    if (isset($_GET['token']) && tableExists('{{tokens_'.$surveyid.'}}'))
-    {
-
-        //get language from token (if one exists)
-        $tkquery2 = "SELECT * FROM {{tokens_".$surveyid."}} WHERE token='".$clienttoken."' AND (completed = 'N' or completed='')";
-        //echo $tkquery2;
-        $result = dbExecuteAssoc($tkquery2) or safeDie ("Couldn't get tokens<br />$tkquery<br />");    //Checked
-        foreach ($result->readAll() as $rw)
-        {
-            $tklanguage=$rw['language'];
-        }
-    }
+    // Multi lingual support order : by REQUEST, if not by Token->language else by survey default language
     if (returnGlobal('lang',true))
     {
         $language_to_set=returnGlobal('lang',true);
-    } elseif (isset($tklanguage))
+    }
+    elseif (isset($oTokenEntry) && $oTokenEntry)
     {
-        $language_to_set=$tklanguage;
+        // If survey have token : we have a $oTokenEntry
+        // Can use $oTokenEntry = Token::model($surveyid)->findByAttributes(array('token'=>$clienttoken)); if we move on another function : this par don't validate the token validity
+        $language_to_set=$oTokenEntry->language;
     }
     else
     {
         $language_to_set = $thissurvey['language'];
     }
-
-    if (!isset($_SESSION['survey_'.$surveyid]['s_lang']))
-    {
-        SetSurveyLanguage($surveyid, $language_to_set);
-    }
+    // Always SetSurveyLanguage : surveys controller SetSurveyLanguage too, if different : broke survey (#09769)
+    SetSurveyLanguage($surveyid, $language_to_set);
 
 
     UpdateGroupList($surveyid, $_SESSION['survey_'.$surveyid]['s_lang']);
@@ -1214,12 +1194,17 @@ function buildsurveysession($surveyid,$preview=false)
     $sQuery = "SELECT count(*)\n"
     ." FROM {{groups}} INNER JOIN {{questions}} ON {{groups}}.gid = {{questions}}.gid\n"
     ." WHERE {{questions}}.sid=".$surveyid."\n"
-    ." AND {{groups}}.language='".$_SESSION['survey_'.$surveyid]['s_lang']."'\n"
-    ." AND {{questions}}.language='".$_SESSION['survey_'.$surveyid]['s_lang']."'\n"
+    ." AND {{groups}}.language='".App()->getLanguage()."'\n"
+    ." AND {{questions}}.language='".App()->getLanguage()."'\n"
     ." AND {{questions}}.parent_qid=0\n";
-
     $totalquestions = Yii::app()->db->createCommand($sQuery)->queryScalar();
 
+    $sQuery= "select count(*) from {{groups}} 
+        left join {{questions}} on  {{groups}}.gid={{questions}}.gid 
+        where {{groups}}.sid={$surveyid} and qid is null";
+    $iTotalGroupsWithoutQuestions = Yii::app()->db->createCommand($sQuery)->queryScalar();
+
+    
     // Fix totalquestions by substracting Test Display questions
     $iNumberofQuestions=dbExecuteAssoc("SELECT count(*)\n"
     ." FROM {{questions}}"
@@ -1247,9 +1232,7 @@ function buildsurveysession($surveyid,$preview=false)
         case "S":
             $_SESSION['survey_'.$surveyid]['totalsteps']=$totalquestions;
     }
-
-
-    if ($totalquestions == 0)	//break out and crash if there are no questions!
+    if ($totalquestions == 0 || $iTotalGroupsWithoutQuestions>0)    //break out and crash if there are no questions!
     {
         sendCacheHeaders();
         doHeader();
@@ -1259,8 +1242,16 @@ function buildsurveysession($surveyid,$preview=false)
         echo templatereplace(file_get_contents($sTemplatePath."survey.pstpl"),array(),$redata,'frontend_helper[1915]');
         echo "\t<div id='wrapper'>\n"
         ."\t<p id='tokenmessage'>\n"
-        ."\t".$clang->gT("This survey does not yet have any questions and cannot be tested or completed.")."<br /><br />\n"
-        ."\t".sprintf($clang->gT("For further information please contact %s"), $thissurvey['adminname'])
+        ."\t".gT("This survey cannot be tested or completed for the following reason(s):")."<br />\n";
+        echo "<ul>";
+        if ($totalquestions == 0){
+            echo '<li>'.gT("There are no questions in this survey.").'</li>';
+        }
+        if ($iTotalGroupsWithoutQuestions > 0){
+            echo '<li>'.gT("There are empty question groups in this survey - please create at least one question within a question group.").'</li>';
+        }
+        echo "</ul>"
+        ."\t".sprintf(gT("For further information please contact %s"), $thissurvey['adminname'])
         ." (<a href='mailto:{$thissurvey['adminemail']}'>"
         ."{$thissurvey['adminemail']}</a>)<br /><br />\n"
         ."\t</p>\n"
@@ -1272,7 +1263,7 @@ function buildsurveysession($surveyid,$preview=false)
     }
 
     //Perform a case insensitive natural sort on group name then question title of a multidimensional array
-    //	usort($arows, 'groupOrderThenQuestionOrder');
+    //    usort($arows, 'groupOrderThenQuestionOrder');
 
     //3. SESSION VARIABLE - insertarray
     //An array containing information about used to insert the data into the db at the submit stage
@@ -1477,7 +1468,7 @@ function buildsurveysession($surveyid,$preview=false)
         $_SESSION['survey_'.$surveyid]['fieldmap-' . $surveyid . $_SESSION['survey_'.$surveyid]['s_lang']] = $fieldmap;
         $_SESSION['survey_'.$surveyid]['fieldmap-' . $surveyid . '-randMaster'] = 'fieldmap-' . $surveyid . $_SESSION['survey_'.$surveyid]['s_lang'];
     }
-    
+
     // TMSW Condition->Relevance:  don't need hasconditions, or usedinconditions
 
     $_SESSION['survey_'.$surveyid]['fieldmap']=$fieldmap;
@@ -1489,17 +1480,17 @@ function buildsurveysession($surveyid,$preview=false)
             $_SESSION['survey_'.$surveyid]['insertarray'][]=$field['fieldname'];
             //fieldarray ARRAY CONTENTS -
             //            [0]=questions.qid,
-            //			[1]=fieldname,
-            //			[2]=questions.title,
-            //			[3]=questions.question
-            //                 	[4]=questions.type,
-            //			[5]=questions.gid,
-            //			[6]=questions.mandatory,
-            //			[7]=conditionsexist,
-            //			[8]=usedinconditions
-            //			[8]=usedinconditions
-            //			[9]=used in group.php for question count
-            //			[10]=new group id for question in randomization group (GroupbyGroup Mode)
+            //            [1]=fieldname,
+            //            [2]=questions.title,
+            //            [3]=questions.question
+            //                     [4]=questions.type,
+            //            [5]=questions.gid,
+            //            [6]=questions.mandatory,
+            //            [7]=conditionsexist,
+            //            [8]=usedinconditions
+            //            [8]=usedinconditions
+            //            [9]=used in group.php for question count
+            //            [10]=new group id for question in randomization group (GroupbyGroup Mode)
 
             if (!isset($_SESSION['survey_'.$surveyid]['fieldarray'][$field['sid'].'X'.$field['gid'].'X'.$field['qid']]))
             {
@@ -1553,22 +1544,22 @@ function buildsurveysession($surveyid,$preview=false)
     $startingValues=array();
     if (isset($_GET))
     {
-		foreach ($_GET as $k=>$v)
+        foreach ($_GET as $k=>$v)
         {
-			if (!in_array($k,$reservedGetValues) && isset($_SESSION['survey_'.$surveyid]['fieldmap'][$k]))
+            if (!in_array($k,$reservedGetValues) && isset($_SESSION['survey_'.$surveyid]['fieldmap'][$k]))
             {
                 $startingValues[$k] = $v;
             }
-			else
-			{   // Search question codes to use those for prefilling.
-				foreach($_SESSION['survey_'.$surveyid]['fieldmap'] as $sgqa => $details)
-				{
-					if ($details['title'] == $k)
-					{
-						$startingValues[$sgqa] = $v;
-					}
-				}
-			}
+            else
+            {   // Search question codes to use those for prefilling.
+                foreach($_SESSION['survey_'.$surveyid]['fieldmap'] as $sgqa => $details)
+                {
+                    if ($details['title'] == $k)
+                    {
+                        $startingValues[$sgqa] = $v;
+                    }
+                }
+            }
         }
     }
     $_SESSION['survey_'.$surveyid]['startingValues']=$startingValues;
@@ -1607,6 +1598,7 @@ function buildsurveysession($surveyid,$preview=false)
             }
         }
     }
+    Yii::trace('end', 'survey.buildsurveysession');
 }
 
 /**
@@ -1618,7 +1610,7 @@ function surveymover()
 {
     $surveyid=Yii::app()->getConfig('surveyID');
     $thissurvey=getSurveyInfo($surveyid);
-    $clang = Yii::app()->lang;
+
 
     $sMoveNext="movenext";
     $sMovePrev="";
@@ -1648,7 +1640,7 @@ function surveymover()
 
     // Submit ?
     if ($iSessionStep && ($iSessionStep == $iSessionTotalSteps)
-        || $thissurvey['format'] == 'A' 
+        || $thissurvey['format'] == 'A'
         )
     {
         $sMoveNext="movesubmit";
@@ -1662,7 +1654,7 @@ function surveymover()
 
     // Construction of mover
     if($sMovePrev){
-        $sLangMoveprev=$clang->gT("Previous");
+        $sLangMoveprev=gT("Previous");
         $sSurveyMover.= CHtml::htmlButton($sLangMoveprev,array('type'=>'submit','id'=>"{$sMovePrev}btn",'value'=>$sMovePrev,'name'=>$sMovePrev,'accesskey'=>'p','class'=>$sClass));
     }
     if($sMovePrev && $sMoveNext){
@@ -1671,10 +1663,10 @@ function surveymover()
 
     if($sMoveNext){
         if($sMoveNext=="movesubmit"){
-            $sLangMovenext=$clang->gT("Submit");
+            $sLangMovenext=gT("Submit");
             $sAccessKeyNext='l';// Why l ?
         }else{
-            $sLangMovenext=$clang->gT("Next");
+            $sLangMovenext=gT("Next");
             $sAccessKeyNext='n';
         }
         $sSurveyMover.= CHtml::htmlButton($sLangMovenext,array('type'=>'submit','id'=>"{$sMoveNext}btn",'value'=>$sMoveNext,'name'=>$sMoveNext,'accesskey'=>$sAccessKeyNext,'class'=>$sClass));
@@ -1691,7 +1683,7 @@ function surveymover()
 function doAssessment($surveyid, $returndataonly=false)
 {
 
-    $clang = Yii::app()->lang;
+
     $baselang=Survey::model()->findByPk($surveyid)->language;
     if(Survey::model()->findByPk($surveyid)->assessments!="Y")
     {
@@ -1743,7 +1735,7 @@ function doAssessment($surveyid, $returndataonly=false)
                         {
                             if ($_SESSION['survey_'.$surveyid][$field['fieldname']] == "Y")
                             {
-                                $aAttributes=getQuestionAttributeValues($field['qid'],$field['type']);
+                                $aAttributes=getQuestionAttributeValues($field['qid']);
                                 $fieldmap[$field['fieldname']]['assessment_value']=(int)$aAttributes['assessment_value'];
                                 $total=$total+(int)$aAttributes['assessment_value'];
                             }
@@ -1851,7 +1843,7 @@ function doAssessment($surveyid, $returndataonly=false)
 */
 function UpdateGroupList($surveyid, $language)
 {
-    $clang = Yii::app()->lang;
+
     unset ($_SESSION['survey_'.$surveyid]['grouplist']);
     $query = "SELECT * FROM {{groups}} WHERE sid=$surveyid AND language='".$language."' ORDER BY group_order";
     $result = dbExecuteAssoc($query) or safeDie ("Couldn't get group list<br />$query<br />");  //Checked
@@ -1890,12 +1882,12 @@ function UpdateGroupList($surveyid, $language)
 */
 function UpdateFieldArray()
 {
-	global $surveyid;
-	$clang = Yii::app()->lang;
+    global $surveyid;
+
 
     if (isset($_SESSION['survey_'.$surveyid]['fieldarray']))
     {
-		foreach ($_SESSION['survey_'.$surveyid]['fieldarray'] as $key => $value)
+        foreach ($_SESSION['survey_'.$surveyid]['fieldarray'] as $key => $value)
         {
             $questionarray = &$_SESSION['survey_'.$surveyid]['fieldarray'][$key];
             $query = "SELECT title, question FROM {{questions}} WHERE qid=".$questionarray[0]." AND language='".$_SESSION['survey_'.$surveyid]['s_lang']."'";
@@ -1922,7 +1914,7 @@ function checkCompletedQuota($surveyid,$return=false)
     {
         return;
     }
-    static $aMatchedQuotas; // EM call 2 times quotas with 3 lines of php code, then use static. 
+    static $aMatchedQuotas; // EM call 2 times quotas with 3 lines of php code, then use static.
     if(!$aMatchedQuotas)
     {
         $aMatchedQuotas=array();
@@ -1930,55 +1922,47 @@ function checkCompletedQuota($surveyid,$return=false)
         // $aQuotasInfo have an 'active' key, we don't use it ?
         if(!$aQuotasInfo || empty($aQuotasInfo))
             return $aMatchedQuotas;
-        // Test only completed quota, other is not needed
-        $aQuotasCompleted=array();
-        foreach($aQuotasInfo as $aQuotaInfo)
-        {
-            $iCompleted=getQuotaCompletedCount($surveyid, $aQuotaInfo['id']);// Return a string
-            if(ctype_digit($iCompleted) && ((int)$iCompleted >= (int)$aQuotaInfo['qlimit'])) // This remove invalid quota and not completed
-                $aQuotasCompleted[]=$aQuotaInfo;
-        }
-
-        if(empty($aQuotasCompleted))
-            return $aMatchedQuotas;
         // OK, we have some quota, then find if this $_SESSION have some set
         $aPostedFields = explode("|",Yii::app()->request->getPost('fieldnames','')); // Needed for quota allowing update 
-        foreach ($aQuotasCompleted as $aQuotaCompleted)
+        foreach ($aQuotasInfo as $aQuotaInfo)
         {
+            if(count($aQuotaInfo['members'])===0)
+                continue;
             $iMatchedAnswers=0;
             $bPostedField=false;
             // Array of field with quota array value
             $aQuotaFields=array();
-            foreach ($aQuotaCompleted['members'] as $aQuotaMember)
+            // Array of fieldnames with relevance value : EM fill $_SESSION with default value even is unrelevant (em_manager_helper line 6548)
+            $aQuotaRelevantFieldnames=array();
+            foreach ($aQuotaInfo['members'] as $aQuotaMember)
             {
-                    $aQuotaFields[$aQuotaMember['fieldname']][] = $aQuotaMember['value'];
+                $aQuotaFields[$aQuotaMember['fieldname']][] = $aQuotaMember['value'];
+                $aQuotaRelevantFieldnames[$aQuotaMember['fieldname']]=isset($_SESSION['survey_'.$surveyid]['relevanceStatus'][$aQuotaMember['qid']]) && $_SESSION['survey_'.$surveyid]['relevanceStatus'][$aQuotaMember['qid']];
             }
-            // For each field : test if actual responses is in quota
+            // For each field : test if actual responses is in quota (and is relevant)
             foreach ($aQuotaFields as $sFieldName=>$aValues)
             {
-                // Test if actual answer have a value
-                if(isset($_SESSION['survey_'.$surveyid][$sFieldName]) && in_array($_SESSION['survey_'.$surveyid][$sFieldName],$aValues))
+                $bInQuota=isset($_SESSION['survey_'.$surveyid][$sFieldName]) && in_array($_SESSION['survey_'.$surveyid][$sFieldName],$aValues);
+                if($bInQuota && $aQuotaRelevantFieldnames[$sFieldName])
+                {
                     $iMatchedAnswers++;
-                if(in_array($sFieldName,$aPostedFields))
+                }
+                if(in_array($sFieldName,$aPostedFields))// Need only one posted value
                     $bPostedField=true;
             }
-            if($iMatchedAnswers==count($aQuotaFields))
+            // Count only needed quotas
+            if($iMatchedAnswers==count($aQuotaFields) && ( $aQuotaInfo['action']!=2 || $bPostedField ) )
             {
-                switch ($aQuotaCompleted['action'])
-                {
-                    case '1':
-                    default:
-                        $aMatchedQuotas[]=$aQuotaCompleted;
-                        break;
-                    case '2':
-                        if($bPostedField)// Action 2 allow to correct last answers, then need to be posted
-                            $aMatchedQuotas[]=$aQuotaCompleted;
-                        break;
+                if($aQuotaInfo['qlimit'] == 0){ // Always add the quota if qlimit==0
+                    $aMatchedQuotas[]=$aQuotaInfo;
+                }else{
+                    $iCompleted=getQuotaCompletedCount($surveyid, $aQuotaInfo['id']);
+                    if(!is_null($iCompleted) && ((int)$iCompleted >= (int)$aQuotaInfo['qlimit'])) // This remove invalid quota and not completed
+                        $aMatchedQuotas[]=$aQuotaInfo;
                 }
             }
         }
     }
-
     if ($return)
         return $aMatchedQuotas;
     if(empty($aMatchedQuotas))
@@ -1986,11 +1970,16 @@ function checkCompletedQuota($surveyid,$return=false)
 
     // Now we have all the information we need about the quotas and their status.
     // We need to construct the page and do all needed action
-    $thissurvey=getSurveyInfo($surveyid, $_SESSION['survey_'.$surveyid]['s_lang']);
-    $sTemplatePath=getTemplatePath($thissurvey['templatedir']);
+    $aSurveyInfo=getSurveyInfo($surveyid, $_SESSION['survey_'.$surveyid]['s_lang']);
+    $sTemplatePath=getTemplatePath($aSurveyInfo['template']);
     $sClientToken=isset($_SESSION['survey_'.$surveyid]['token'])?$_SESSION['survey_'.$surveyid]['token']:"";
+    // $redata for templatereplace
+    $aDataReplacement = array(
+        'thissurvey'=>$aSurveyInfo,
+        'clienttoken'=>$sClientToken,
+        'token'=>$sClientToken,
+    );
 
-    $redata = compact(array_keys(get_defined_vars()));
     // We take only the first matched quota, no need for each
     $aMatchedQuota=$aMatchedQuotas[0];
     // If a token is used then mark the token as completed, do it before event : this allow plugin to update token information
@@ -1998,6 +1987,7 @@ function checkCompletedQuota($surveyid,$return=false)
     $event->set('surveyId', $surveyid);
     $event->set('responseId', $_SESSION['survey_'.$surveyid]['srid']);// We allways have a responseId
     $event->set('aMatchedQuotas', $aMatchedQuotas);// Give all the matched quota : the first is the active
+    App()->getPluginManager()->dispatchEvent($event);
     $blocks = array();
     foreach ($event->getAllContent() as $blockData)
     {
@@ -2015,31 +2005,31 @@ function checkCompletedQuota($surveyid,$return=false)
     if ($sAction == "1" && $sClientToken)
         submittokens(true);
     // Construct the default message
-    $sMessage = templatereplace($sMessage,array(),$redata);
-    $sUrl = passthruReplace($sUrl, $thissurvey);
-    $sUrl = templatereplace($sUrl,array(),$redata);
-    $sUrlDescription = templatereplace($sUrlDescription,array(),$redata);
+    $sMessage = templatereplace($sMessage,array(),$aDataReplacement, 'QuotaMessage', $aSurveyInfo['anonymized']!='N', NULL, array(), true );
+    $sUrl = passthruReplace($sUrl, $aSurveyInfo);
+    $sUrl = templatereplace($sUrl,array(),$aDataReplacement, 'QuotaUrl', $aSurveyInfo['anonymized']!='N', NULL, array(), true );
+    $sUrlDescription = templatereplace($sUrlDescription,array(),$aDataReplacement, 'QuotaUrldescription', $aSurveyInfo['anonymized']!='N', NULL, array(), true );
 
     // Construction of default message inside quotamessage class
-    $quotaMessage = "<div class='quotamessage limesurveycore'>\n";
-    $quotaMessage.= "\t".$sMessage."\n";
-    if($sUrl || $sUrl)
-        echo "<br /><br />\t<a href='".$sUrl."'>".$sUrlDescription."</a><br />\n";
+    $sHtmlQuotaMessage = "<div class='quotamessage limesurveycore'>\n";
+    $sHtmlQuotaMessage.= "\t".$sMessage."\n";
+    $sHtmlQuotaUrl=($sUrl)? "<a href='".$sUrl."'>".$sUrlDescription."</a>" : "";
+
     // Add the navigator with Previous button if quota allow modification.
     if ($sAction == "2")
     {
         $sQuotaStep= isset($_SESSION['survey_'.$surveyid]['step'])?$_SESSION['survey_'.$surveyid]['step']:0; // Surely not needed
         $sNavigator = CHtml::htmlButton(gT("Previous"),array('type'=>'submit','id'=>"moveprevbtn",'value'=>$sQuotaStep,'name'=>'move','accesskey'=>'p','class'=>"submit button"));
         //$sNavigator .= " ".CHtml::htmlButton(gT("Submit"),array('type'=>'submit','id'=>"movesubmit",'value'=>"movesubmit",'name'=>"movesubmit",'accesskey'=>'l','class'=>"submit button"));
-        $quotaMessage.= CHtml::form(array("/survey/index"), 'post', array('id'=>'limesurvey','name'=>'limesurvey'));
-        $quotaMessage.= templatereplace(file_get_contents($sTemplatePath."/navigator.pstpl"),array('NAVIGATOR'=>$sNavigator,'SAVE'=>''),$redata);
-        $quotaMessage.= CHtml::hiddenField('sid',$surveyid);
-        $quotaMessage.= CHtml::hiddenField('token',$sClientToken);// Did we really need it ?
-        $quotaMessage.= CHtml::endForm();
+        $sHtmlQuotaMessage.= CHtml::form(array("/survey/index","sid"=>$surveyid), 'post', array('id'=>'limesurvey','name'=>'limesurvey'));
+        $sHtmlQuotaMessage.= templatereplace(file_get_contents($sTemplatePath."/navigator.pstpl"),array('NAVIGATOR'=>$sNavigator,'SAVE'=>''),$aDataReplacement);
+        $sHtmlQuotaMessage.= CHtml::hiddenField('sid',$surveyid);
+        $sHtmlQuotaMessage.= CHtml::hiddenField('token',$sClientToken);// Did we really need it ?
+        $sHtmlQuotaMessage.= CHtml::endForm();
     }
-    $quotaMessage.= "</div>\n";
+    $sHtmlQuotaMessage.= "</div>\n";
     // Add the plugin message before default message
-    $quotaMessage = implode("\n", $blocks) ."\n". $quotaMessage;
+    $sHtmlQuotaMessage = implode("\n", $blocks) ."\n". $sHtmlQuotaMessage;
 
     // Send page to user and end.
     sendCacheHeaders();
@@ -2050,10 +2040,9 @@ function checkCompletedQuota($surveyid,$return=false)
         header("Location: ".$sUrl);
     }
     doHeader();
-    echo templatereplace(file_get_contents($sTemplatePath."/startpage.pstpl"),array(),$redata);
-    // Better to use completed.pstpl, but some template can need update , leave it for 2.06 #09133
-    echo $quotaMessage;
-    echo templatereplace(file_get_contents($sTemplatePath."/endpage.pstpl"),array(),$redata);
+    echo templatereplace(file_get_contents($sTemplatePath."/startpage.pstpl"),array(),$aDataReplacement);
+    echo templatereplace(file_get_contents($sTemplatePath."/completed.pstpl"),array("COMPLETED"=>$sHtmlQuotaMessage,"URL"=>$sHtmlQuotaUrl),$aDataReplacement);
+    echo templatereplace(file_get_contents($sTemplatePath."/endpage.pstpl"),array(),$aDataReplacement);
     doFooter();
     if ($sAction == "1")
         killSurveySession($surveyid);
@@ -2101,28 +2090,17 @@ function encodeEmail($mail, $text="", $class="", $params=array())
 */
 function GetReferringUrl()
 {
-    global $clang;
-
-    $clang = Yii::app()->lang;
-
     // read it from server variable
     if(isset($_SERVER["HTTP_REFERER"]))
     {
-        if(!preg_match('/'.$_SERVER["SERVER_NAME"].'/', $_SERVER["HTTP_REFERER"]))
+        if (!Yii::app()->getConfig('strip_query_from_referer_url'))
         {
-            if (!Yii::app()->getConfig('strip_query_from_referer_url'))
-            {
-                return $_SERVER["HTTP_REFERER"];
-            }
-            else
-            {
-                $aRefurl = explode("?",$_SERVER["HTTP_REFERER"]);
-                return $aRefurl[0];
-            }
+            return $_SERVER["HTTP_REFERER"];
         }
         else
         {
-            return '-';
+            $aRefurl = explode("?",$_SERVER["HTTP_REFERER"]);
+            return $aRefurl[0];
         }
     }
     else
@@ -2136,14 +2114,12 @@ function GetReferringUrl()
 */
 function display_first_page() {
     global $token, $surveyid, $thissurvey, $navigator;
-	$totalquestions = $_SESSION['survey_'.$surveyid]['totalquestions'];
-
-    $clang = Yii::app()->lang;
+    $totalquestions = $_SESSION['survey_'.$surveyid]['totalquestions'];
 
     // Fill some necessary var for template
     $navigator = surveymover();
     $sitename = Yii::app()->getConfig('sitename');
-    $languagechanger=makeLanguageChangerSurvey($clang->langcode);
+    $languagechanger=makeLanguageChangerSurvey(App()->language);
 
     sendCacheHeaders();
     doHeader();
@@ -2155,7 +2131,7 @@ function display_first_page() {
     $sTemplatePath=$_SESSION['survey_'.$surveyid]['templatepath'];
 
     echo templatereplace(file_get_contents($sTemplatePath."startpage.pstpl"),array(),$redata,'frontend_helper[2757]');
-    echo CHtml::form(array("/survey/index"), 'post', array('id'=>'limesurvey','name'=>'limesurvey','autocomplete'=>'off'));
+    echo CHtml::form(array("/survey/index","sid"=>$surveyid), 'post', array('id'=>'limesurvey','name'=>'limesurvey','autocomplete'=>'off'));
     echo "\n\n<!-- START THE SURVEY -->\n";
 
     echo templatereplace(file_get_contents($sTemplatePath."welcome.pstpl"),array(),$redata,'frontend_helper[2762]')."\n";
@@ -2166,7 +2142,7 @@ function display_first_page() {
     echo templatereplace(file_get_contents($sTemplatePath."navigator.pstpl"),array(),$redata,'frontend_helper[2767]');
     if ($thissurvey['active'] != "Y")
     {
-        echo "<p style='text-align:center' class='error'>".$clang->gT("This survey is currently not active. You will not be able to save your responses.")."</p>\n";
+        echo "<p style='text-align:center' class='error'>".gT("This survey is currently not active. You will not be able to save your responses.")."</p>\n";
     }
     echo "\n<input type='hidden' name='sid' value='$surveyid' id='sid' />\n";
     if (isset($token) && !empty($token)) {
@@ -2219,7 +2195,7 @@ function resetTimers()
 * @param int $surveyid
 * @param string $language
 */
-function SetSurveyLanguage($surveyid, $language)
+function SetSurveyLanguage($surveyid, $sLanguage)
 {
     $surveyid=sanitize_int($surveyid);
     $default_language = Yii::app()->getConfig('defaultlang');
@@ -2228,36 +2204,30 @@ function SetSurveyLanguage($surveyid, $language)
     {
         $default_survey_language= Survey::model()->findByPk($surveyid)->language;
         $additional_survey_languages = Survey::model()->findByPk($surveyid)->getAdditionalLanguages();
-        if (!isset($language) || ($language=='')
-        || !( in_array($language,$additional_survey_languages) || $language==$default_survey_language)
+        if (!isset($sLanguage) || ($sLanguage=='')
+        || !( in_array($sLanguage,$additional_survey_languages) || $sLanguage==$default_survey_language)
         )
         {
             // Language not supported, fall back to survey's default language
             $_SESSION['survey_'.$surveyid]['s_lang'] = $default_survey_language;
         } else {
-            $_SESSION['survey_'.$surveyid]['s_lang'] =  $language;
+            $_SESSION['survey_'.$surveyid]['s_lang'] =  $sLanguage;
         }
-        Yii::import('application.libraries.Limesurvey_lang', true);
-        $clang = new limesurvey_lang($_SESSION['survey_'.$surveyid]['s_lang']);
+        App()->setLanguage($_SESSION['survey_'.$surveyid]['s_lang']);
         $thissurvey=getSurveyInfo($surveyid, @$_SESSION['survey_'.$surveyid]['s_lang']);
         Yii::app()->loadHelper('surveytranslator');
-        $_SESSION['dateformats'] = getDateFormatData($thissurvey['surveyls_dateformat'],$_SESSION['survey_'.$surveyid]['s_lang']);
         LimeExpressionManager::SetEMLanguage($_SESSION['survey_'.$surveyid]['s_lang']);
     }
     else
     {
-        if(!$language)
+        if(!$sLanguage)
         {
-            $language=$default_language;
+            $sLanguage=$default_language;
         }
-        $_SESSION['survey_'.$surveyid]['s_lang'] = $language;
-        Yii::import('application.libraries.Limesurvey_lang', true);
-        $clang = new Limesurvey_lang($language);
+        $_SESSION['survey_'.$surveyid]['s_lang'] = $sLanguage;
+        App()->setLanguage($_SESSION['survey_'.$surveyid]['s_lang']);
     }
 
-    $oApplication=Yii::app();
-    $oApplication->lang=$clang;
-    return $clang;
 }
 
 /**
@@ -2265,7 +2235,7 @@ function SetSurveyLanguage($surveyid, $language)
 **/
 function getMove()
 {
-#    $clang = Yii::app()->lang;
+#
     $aAcceptedMove=array('default','movenext','movesubmit','moveprev','saveall','loadall','clearall','changelang');
     // We can control is save and load are OK : todo fix according to survey settings
     // Maybe allow $aAcceptedMove in Plugin

@@ -27,7 +27,7 @@ class LSYii_EmailIDNAValidator extends CValidator {
         
         if ($this->allowMultiple)
         {
-                $aEmailAdresses=explode(';',$object->$attribute);
+            $aEmailAdresses=explode(';',$object->$attribute);
         }
         else
         {
@@ -36,7 +36,7 @@ class LSYii_EmailIDNAValidator extends CValidator {
         
         foreach ($aEmailAdresses as $sEmailAddress)
         {
-            if (!validateEmailAddress($object->$attribute))
+            if (!validateEmailAddress($sEmailAddress))
             {
                 $this->addError($object, $attribute, gT('Invalid email address.'));
                 return;

@@ -8,7 +8,16 @@
 	abstract class Response extends Dynamic
 	{
 
-		/**
+        public function beforeDelete() {
+            if (parent::beforeDelete())
+            {
+                $this->deleteFiles();
+                return true;
+            }
+            return false;
+        }
+
+        /**
 		 *
 		 * @param mixed $className Either the classname or the survey id.
 		 * @return Response
@@ -27,15 +36,18 @@
 			return parent::create($surveyId, $scenario);
 		}
 
+		/**
+         * Delete all files related to this repsonse.
+         */
         public function getFiles()
         {
             $questions = Question::model()->findAllByAttributes(array('sid' => $this->dynamicId,'type' => '|'));
             $files = array();
             foreach ($questions as $question)
             {
-                
+
                 $field = "{$question->sid}X{$question->gid}X{$question->qid}";
-                $data = json_decode($this->getAttribute($field), true);
+                $data = json_decode(stripslashes($this->getAttribute($field)), true);
                 if (is_array($data))
                 {
                     $files = array_merge($files, $data);
@@ -62,6 +74,7 @@
         }
 		public function relations()
 		{
+            $t = $this->getTableAlias();
 			$result = array(
 				'token' => array(self::BELONGS_TO, 'Token_' . $this->dynamicId, array('token' => 'token')),
 				'survey' =>  array(self::BELONGS_TO, 'Survey', '', 'on' => "sid = {$this->dynamicId}" )
@@ -73,6 +86,10 @@
 		{
 			return '{{survey_' . $this->dynamicId . '}}';
 		}
+        
+        public function getSurveyId() {
+            return $this->dynamicId;
+        }
 	}
 
 ?>

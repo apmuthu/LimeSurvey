@@ -34,6 +34,19 @@ $(document).ready(function() {
         pager: "#pager",
         pgtext: pagerMsg,
         emptyrecords: emptyRecordsTxt,
+		gridComplete: function() {
+			// Disable "Add" button if more than 59 attributes
+			if($('#attributeControl').jqGrid('getGridParam', 'records') > 59) {
+				var newCell = $('#add_attributeControl').clone();
+				$('#add_attributeControl').hide().before(newCell);
+				$('#add_attributeControl:eq(0)').attr('id', 'add_attributeControl_new').attr('title', addDisabledCaption);
+				$('#add_attributeControl_new .ui-icon').addClass('ui-state-disabled');
+			}
+			else {
+				$('#add_attributeControl').show();
+				$('#add_attributeControl_new').remove();
+			}
+		},
         recordtext: viewRecordTxt
     });
 
@@ -124,7 +137,7 @@ $(document).ready(function() {
 function checkboxFormatter(cellvalue, options) {
     cellvalue = cellvalue + "";
     var bchk = cellvalue.toLowerCase() == 'true' ? " checked=\"checked\"" : "";
-    return "<input type='checkbox' name='visible_"+options.rowId+"' id='visible_"+options.rowId+"' onclick=\"ajaxSave('" + options.rowId + "');\" " + bchk + " value='" + cellvalue + "' />"
+    return "<input type='checkbox' name='visible_"+options.rowId+"' id='visible_"+options.rowId+"' onclick=\"ajaxSave('" + options.rowId + "');\" " + bchk + " value='" + cellvalue + "' />";
 }
 
 function ajaxSave(rowid) {

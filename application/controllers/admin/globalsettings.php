@@ -57,39 +57,34 @@ class GlobalSettings extends Survey_Common_Action
         updateCheck();
         $this->getController()->redirect(array('admin/globalsettings'));
     }
-        
+
     private function _displaySettings()
     {
         Yii::app()->loadHelper('surveytranslator');
 
         //save refurl from where global settings screen is called!
         $refurl = Yii::app()->getRequest()->getUrlReferrer();
-        
+
         // Some URLs are not to be allowed to refered back to.
         // These exceptions can be added to the $aReplacements array
-        $aReplacements=array('admin/user/adduser'=>'admin/user/index',
+        $aReplacements=array('admin/update/sa/step4b'=>'admin/sa/index',
                              'admin/user/sa/adduser'=>'admin/user/sa/index',
-                             'admin/user/sa/setusertemplates'=>'admin/user/sa/index',
-                             'admin/user/setusertemplates'=>'admin/user/sa/index'
-                             
+                             'admin/user/sa/setusertemplates'=>'admin/user/sa/index'
                             );
         $refurl= str_replace(array_keys($aReplacements),array_values($aReplacements),$refurl);
         Yii::app()->session['refurl'] = htmlspecialchars($refurl); //just to be safe!
 
-        $data['clang'] = $this->getController()->lang;
         $data['title'] = "hi";
         $data['message'] = "message";
         foreach ($this->_checkSettings() as $key => $row)
         {
             $data[$key] = $row;
         }
-        $data['thisupdatecheckperiod'] = getGlobalSetting('updatecheckperiod');
-        $data['sUpdateNotification'] = getGlobalSetting('updatenotification');
         Yii::app()->loadLibrary('Date_Time_Converter');
         $dateformatdetails = getDateFormatData(Yii::app()->session['dateformat']);
-        $datetimeobj = new date_time_converter(dateShift(getGlobalSetting("updatelastcheck"),'Y-m-d H:i:s',getGlobalSetting('timeadjust')), 'Y-m-d H:i:s'); 
+        $datetimeobj = new date_time_converter(dateShift(getGlobalSetting("updatelastcheck"),'Y-m-d H:i:s',getGlobalSetting('timeadjust')), 'Y-m-d H:i:s');
         $data['updatelastcheck']=$datetimeobj->convert($dateformatdetails['phpdate'] . " H:i:s");
-        
+
         $data['updateavailable'] = (getGlobalSetting("updateavailable") &&  Yii::app()->getConfig("updatable"));
         $data['updatable'] = Yii::app()->getConfig("updatable");
         $data['updateinfo'] = getGlobalSetting("updateinfo");
@@ -119,8 +114,19 @@ class GlobalSettings extends Survey_Common_Action
         if (!Permission::model()->hasGlobalPermission('settings','update')) {
             $this->getController()->redirect(array('/admin'));
         }
-        $clang = $this->getController()->lang;
         Yii::app()->loadHelper('surveytranslator');
+
+        $iPDFFontSize = sanitize_int($_POST['pdffontsize']);
+        if ($iPDFFontSize < 1)
+        {
+            $iPDFFontSize = 9;
+        }
+
+        $iPDFLogoWidth = sanitize_int($_POST['pdflogowidth']);
+        if ($iPDFLogoWidth < 1)
+        {
+            $iPDFLogoWidth = 50;
+        }
 
         $maxemails = $_POST['maxemails'];
         if (sanitize_int($_POST['maxemails']) < 1) {
@@ -141,14 +147,17 @@ class GlobalSettings extends Survey_Common_Action
         setGlobalSetting('defaultlang', $defaultlang);
         setGlobalSetting('restrictToLanguages', trim($aRestrictToLanguages));
         setGlobalSetting('sitename', strip_tags($_POST['sitename']));
-        setGlobalSetting('updatecheckperiod', (int)($_POST['updatecheckperiod']));
-        setGlobalSetting('updatenotification', strip_tags($_POST['updatenotification']));
         setGlobalSetting('defaulthtmleditormode', sanitize_paranoid_string($_POST['defaulthtmleditormode']));
         setGlobalSetting('defaultquestionselectormode', sanitize_paranoid_string($_POST['defaultquestionselectormode']));
         setGlobalSetting('defaulttemplateeditormode', sanitize_paranoid_string($_POST['defaulttemplateeditormode']));
         if (!Yii::app()->getConfig('demoMode'))
         {
-            setGlobalSetting('defaulttemplate', sanitize_paranoid_string($_POST['defaulttemplate']));
+            $sTemplate=Yii::app()->getRequest()->getPost("defaulttemplate");
+            if(array_key_exists($sTemplate,getTemplateList()))// Filter template name
+            {
+                setGlobalSetting('defaulttemplate', $sTemplate);
+            }
+
         }
         setGlobalSetting('admintheme', sanitize_paranoid_string($_POST['admintheme']));
         setGlobalSetting('adminthemeiconsize', trim(file_get_contents(Yii::app()->getConfig("styledir").DIRECTORY_SEPARATOR.sanitize_paranoid_string($_POST['admintheme']).DIRECTORY_SEPARATOR.'iconsize')));
@@ -163,7 +172,7 @@ class GlobalSettings extends Survey_Common_Action
         setGlobalSetting('bounceaccountuser', strip_tags(returnGlobal('bounceaccountuser')));
 
         if (returnGlobal('bounceaccountpass') != 'enteredpassword') setGlobalSetting('bounceaccountpass', strip_tags(returnGlobal('bounceaccountpass')));
-        
+
         setGlobalSetting('emailsmtpssl', sanitize_paranoid_string(Yii::app()->request->getPost('emailsmtpssl','')));
         setGlobalSetting('emailsmtpdebug', sanitize_int(Yii::app()->request->getPost('emailsmtpdebug','0')));
         setGlobalSetting('emailsmtpuser', strip_tags(returnGlobal('emailsmtpuser')));
@@ -174,13 +183,13 @@ class GlobalSettings extends Survey_Common_Action
             || validateEmailAddress(Yii::app()->request->getPost('siteadminbounce'))) {
             setGlobalSetting('siteadminbounce', strip_tags(Yii::app()->request->getPost('siteadminbounce')));
         } else {
-            $warning .= $clang->gT("Warning! Admin bounce email was not saved because it was not valid.").'<br/>';
+            $warning .= gT("Warning! Admin bounce email was not saved because it was not valid.").'<br/>';
         }
         if (Yii::app()->request->getPost('siteadminemail', '') == ''
             || validateEmailAddress(Yii::app()->request->getPost('siteadminemail'))) {
             setGlobalSetting('siteadminemail', strip_tags(Yii::app()->request->getPost('siteadminemail')));
         } else {
-            $warning .= $clang->gT("Warning! Admin email was not saved because it was not valid.").'<br/>';
+            $warning .= gT("Warning! Admin email was not saved because it was not valid.").'<br/>';
         }
         setGlobalSetting('siteadminname', strip_tags($_POST['siteadminname']));
         setGlobalSetting('shownoanswer', sanitize_int($_POST['shownoanswer']));
@@ -196,6 +205,11 @@ class GlobalSettings extends Survey_Common_Action
         if ($iSessionExpirationTime == 0) $iSessionExpirationTime = 7200;
         setGlobalSetting('iSessionExpirationTime', $iSessionExpirationTime);
         setGlobalSetting('ipInfoDbAPIKey', $_POST['ipInfoDbAPIKey']);
+        setGlobalSetting('pdffontsize', $iPDFFontSize);
+        setGlobalSetting('pdfshowheader', $_POST['pdfshowheader']);
+        setGlobalSetting('pdflogowidth', $iPDFLogoWidth);
+        setGlobalSetting('pdfheadertitle', $_POST['pdfheadertitle']);
+        setGlobalSetting('pdfheaderstring', $_POST['pdfheaderstring']);
         setGlobalSetting('googleMapsAPIKey', $_POST['googleMapsAPIKey']);
         setGlobalSetting('googleanalyticsapikey',$_POST['googleanalyticsapikey']);
         setGlobalSetting('googletranslateapikey',$_POST['googletranslateapikey']);
@@ -210,7 +224,7 @@ class GlobalSettings extends Survey_Common_Action
         setGlobalSetting('timeadjust', $savetime);
         setGlobalSetting('usercontrolSameGroupPolicy', strip_tags($_POST['usercontrolSameGroupPolicy']));
 
-        Yii::app()->session['flashmessage'] = $warning.$clang->gT("Global settings were saved.");
+        Yii::app()->session['flashmessage'] = $warning.gT("Global settings were saved.");
 
         $url = htmlspecialchars_decode(Yii::app()->session['refurl']);
         if($url){Yii::app()->getController()->redirect($url);}

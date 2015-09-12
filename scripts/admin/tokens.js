@@ -1,3 +1,12 @@
+/*
+* Scroll the pager when scrolling horizontally
+*/
+$(window).scroll(function(){
+    $('.ui-jqgrid-pager').css({
+        'left': $(this).scrollLeft()
+    });
+});
+
 var conditionid=1;
 function checkbounces() {
     $("#dialog-modal").dialog('open');
@@ -55,8 +64,8 @@ function addSelectedParticipantsToCPDB()
         $("#addcpdb").load(postUrl, {
             participantid:token},function(){
                 $(location).attr('href',attMapUrl+'/'+survey_id);
-        });        
-    }    
+        });
+    }
 
     /*$(":checked").each(function() {
     token.push($(this).attr('name'));
@@ -161,7 +170,7 @@ $(document).ready(function() {
                     row.find('.drop_editing').remove();
                     row.find('.save').remove();
                     window.editing = false;
-                }
+                };
 
                 jQuery('#displaytokens').editRow(row.attr('id'), true, null, null, null, null, func);
                 row.find('.inputbuttons').hide();
@@ -184,8 +193,7 @@ $(document).ready(function() {
                 .appendTo(jQuery(this).parent().parent())
                 .click(function()
                 {
-                    jQuery('#displaytokens').saveRow(row.attr('id'));
-                    func();
+                    jQuery('#displaytokens').saveRow(row.attr('id'), null, null, {}, function(){func();});
                 });
             });
             updatePageAfterGrid();
@@ -237,7 +245,7 @@ $(document).ready(function() {
                 e.metaKey = false;
             }).selectable({
                 tolerance: 'fit'
-            })
+            });
         }
     },{
         multipleSearch:true,
@@ -332,7 +340,20 @@ $(document).ready(function() {
                 }
                 else
                 {
-                    window.open(inviteurl+$("#displaytokens").getGridParam("selarrrow").join("|"), "_blank")
+                    var newForm = jQuery('<form>', {
+                        'action': inviteurl,
+                        'method': 'POST',
+                        'target': '_blank',
+                    }).append(jQuery('<input>', {
+                        'name': 'YII_CSRF_TOKEN',
+                        'value': LS.data.csrfToken,
+                        'type': 'hidden'
+                    })).append(jQuery('<input>', {
+                        'name': 'tokenids',
+                        'value': $("#displaytokens").getGridParam("selarrrow").join("|"),
+                        'type': 'hidden'
+                    })).appendTo('body');
+                    newForm.submit();
                 }
             }
         });
@@ -349,7 +370,20 @@ $(document).ready(function() {
                 }
                 else
                 {
-                    window.open(remindurl+$("#displaytokens").getGridParam("selarrrow").join("|"), "_blank")
+                    var newForm = jQuery('<form>', {
+                        'action': remindurl,
+                        'method': 'POST',
+                        'target': '_blank'
+                    }).append(jQuery('<input>', {
+                        'name': 'YII_CSRF_TOKEN',
+                        'value': LS.data.csrfToken,
+                        'type': 'hidden'
+                    })).append(jQuery('<input>', {
+                        'name': 'tokenids',
+                        'value': $("#displaytokens").getGridParam("selarrrow").join("|"),
+                        'type': 'hidden'
+                    })).appendTo('body');
+                    newForm.submit();
                 }
             }
         });
@@ -375,7 +409,7 @@ $(document).ready(function() {
     }
     if (bParticipantPanelPermission==true)
     {
-        $("#displaytokens").navSeparatorAdd("#pager",{});        
+        $("#displaytokens").navSeparatorAdd("#pager",{});
         $("#displaytokens").navButtonAdd('#pager', {
             caption:"",
             title:viewParticipantsLink,
@@ -410,7 +444,17 @@ $(document).ready(function() {
         reloadAfterSubmit: true,
         closeOnEspace:true
     });
+	// Center modal dialogs
+    $.jgrid.jqModal = $.extend($.jgrid.jqModal || {}, {
+        beforeOpen: centerInfoDialog
+    });
 });
+
+function centerInfoDialog() {
+    var infoDialog = $("#info_dialog");
+    var dialogparent = infoDialog.parent();
+    infoDialog.css({ 'left': Math.round((dialogparent.width() - infoDialog.width()) / 2)+'px' });
+}
 
 function updatePageAfterGrid(){
     var oGrid=$("#displaytokens");

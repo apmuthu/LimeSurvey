@@ -57,4 +57,3 @@ function Emailchanges(ui,evt)
     $("#bounceencryption").prop('disabled',bounce_disabled);
     $("#bounceaccountmailbox").prop('disabled',bounce_disabled);
 }
-

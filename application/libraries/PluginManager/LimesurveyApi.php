@@ -1,4 +1,9 @@
 <?php 
+namespace ls\pluginmanager;
+use Yii;
+use User;
+use PluginDynamic;
+use SurveyDynamic;
     /**
     * Class exposing a Limesurvey API to plugins.
     * This class is instantiated by the plugin manager,
@@ -35,7 +40,7 @@
         public function setFlash($message, $key ='api')
         {
             // @todo Remove direct session usage.
-            Yii::app()->user->setFlash($key, $message);
+            \Yii::app()->user->setFlash($key, $message);
         }
 
         /**
@@ -93,7 +98,7 @@
             }
             if (isset($table))
             {
-                return PluginDynamic::model($table);
+                return \PluginDynamic::model($table);
             }
         }
 
@@ -128,13 +133,13 @@
             }
             if (isset($table))
             {
-                return new PluginDynamic($table, $scenario);
+                return new \PluginDynamic($table, $scenario);
             }
         }
 
         public function removeResponse($surveyId, $responseId)
         {
-            return Response::model($surveyId)->deleteByPk($responseId);
+            return \Response::model($surveyId)->deleteByPk($responseId);
         }
         /**
         * Check if a table does exist in the database
@@ -156,7 +161,7 @@
         */
         public function EMevaluateExpression($expression)
         {
-            $result = LimeExpressionManager::ProcessString($expression);
+            $result = \LimeExpressionManager::ProcessString($expression);
             return $result;
         }
         
@@ -178,7 +183,7 @@
         */
         public function getResponse($surveyId, $responseId)
         {
-            $response = SurveyDynamic::model($surveyId)->findByPk($responseId);
+            $response = \SurveyDynamic::model($surveyId)->findByPk($responseId);
             if (isset($response))
             {
                 // Now map the response to the question codes if possible, duplicate question codes will result in the
@@ -214,13 +219,13 @@
 
         public function getResponses($surveyId, $attributes = array(), $condition = '', $params = array())
         {
-            return Response::model($surveyId)->findAllByAttributes($attributes, $condition, $params);
+            return \Response::model($surveyId)->findAllByAttributes($attributes, $condition, $params);
         }
 
 
         public function getToken($surveyId, $token)
         {
-            return Token::model($surveyId)->findByAttributes(array('token' => $token));
+            return \Token::model($surveyId)->findByAttributes(array('token' => $token));
         }
         /**
         * Gets a key value list using the group name as value and the group id
@@ -230,7 +235,7 @@
         */
         public function getGroupList($surveyId)
         {
-            $result = QuestionGroup::model()->findListByAttributes(array('sid' => $surveyId), 'group_name');
+            $result = \QuestionGroup::model()->findListByAttributes(array('sid' => $surveyId), 'group_name');
             return $result;
         }
         
@@ -240,9 +245,9 @@
         * @return User
         */
         public function getCurrentUser(){
-            if (Yii::app()->user->id)
+            if (\Yii::app()->user->id)
             {
-                return User::model()->findByPk(Yii::app()->user->id);
+                return \User::model()->findByPk(\Yii::app()->user->id);
             }
             return false;
         }
@@ -266,9 +271,10 @@
         {
             $tables = array();
             $base = App()->getDb()->tablePrefix . 'old_survey_' . $surveyId;
+            $timingbase = App()->getDb()->tablePrefix . 'old_survey_' . $surveyId . '_timings_';
             foreach (App()->getDb()->getSchema()->getTableNames() as $table)
             {
-                if (strpos($table, $base) === 0)
+                if (strpos($table, $base) === 0 && strpos($table, $timingbase)===false)
                 $tables[] = $table;
             }
             return $tables;
@@ -281,7 +287,7 @@
          * @return User
          */
         public function getUser($iUserID){
-            return User::model()->findByPk($iUserID);
+            return \User::model()->findByPk($iUserID);
         }
         
         /**
@@ -292,7 +298,7 @@
          */
         public function getUserByName($username)
         { 
-            $user = User::model()->findByAttributes(array('users_name' => $username));
+            $user = \User::model()->findByAttributes(array('users_name' => $username));
 
             return $user;
         }
@@ -306,7 +312,7 @@
         * @return User
         */
         public function getPermissionSet($iUserID, $iEntityID=null, $sEntityName=null){
-            return Permission::model()->getPermissions($iUserID, $iEntityID, $sEntityName);
+            return \Permission::model()->getPermissions($iUserID, $iEntityID, $sEntityName);
         }        
         
         /**
@@ -316,14 +322,14 @@
         * @return User
         */
         public function getParticipant($iParticipantID){
-            return Participant::model()->findByPk($iParticipantID);
+            return \Participant::model()->findByPk($iParticipantID);
         }
 
         public function getQuestions($surveyId, $language = 'en', $conditions = array())
         {
             $conditions['sid'] = $surveyId;
             $conditions['language'] = $language;
-            return Question::model()->with('subquestions')->findAllByAttributes($conditions);
+            return \Question::model()->with('subquestions')->findAllByAttributes($conditions);
         }
         /**
          * Gets the metadata for a table.
