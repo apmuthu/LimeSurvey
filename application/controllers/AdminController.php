@@ -95,6 +95,7 @@ class AdminController extends LSYii_Controller
 
         die;
     }
+
     /**
     * Load and set session vars
     *
@@ -163,7 +164,7 @@ class AdminController extends LSYii_Controller
                     Yii::app()->session->close();
                     $this->redirect(array('/admin/authentication/sa/login'));
                 }
-                
+
             }
 
             return parent::run($action);
@@ -293,8 +294,7 @@ class AdminController extends LSYii_Controller
         $aData['datepickerlang']="";
         if ($aData['adminlang'] != 'en')
             Yii::app()->getClientScript()->registerScriptFile(App()->baseUrl . "/third_party/jqueryui/development-bundle/ui/i18n/jquery.ui.datepicker-" . $aData['adminlang'] .".js");
-            
-            
+
         $aData['sitename'] = Yii::app()->getConfig("sitename");
         $aData['admintheme'] = Yii::app()->getConfig("admintheme");
         $aData['firebug'] = useFirebug();
